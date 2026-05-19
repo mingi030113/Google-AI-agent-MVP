@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build outputs
+frontend/.next/
+frontend/out/
+dist/
+coverage/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Runtime data and uploads
+backend/data/
+
+# Logs
+*.log
+frontend/dev.out.log
+frontend/dev.err.log
+backend/server.out.log
+backend/server.err.log
+
+# Generated artifacts
+docs/frontend.zip
+reports/*.docx
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

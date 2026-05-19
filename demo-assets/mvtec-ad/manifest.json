@@ -1,0 +1,68 @@
+{
+  "source": "Voxel51/mvtec-ad",
+  "selected": [
+    {
+      "category": "bottle",
+      "defect": "good",
+      "name": "normal-bottle-good.png",
+      "memo": "정상 병 샘플",
+      "sourcePath": "data/data_49/002-95.png"
+    },
+    {
+      "category": "bottle",
+      "defect": "contamination",
+      "name": "contamination-bottle.png",
+      "memo": "오염 불량 의심",
+      "sourcePath": "data/data_49/002-96.png"
+    },
+    {
+      "category": "capsule",
+      "defect": "scratch",
+      "name": "scratch-capsule.png",
+      "memo": "스크래치 불량 의심",
+      "sourcePath": "data/data_8/002-16.png"
+    },
+    {
+      "category": "capsule",
+      "defect": "crack",
+      "name": "crack-capsule.png",
+      "memo": "균열 불량 의심",
+      "sourcePath": "data/data_8/002-15.png"
+    },
+    {
+      "category": "metal_nut",
+      "defect": "scratch",
+      "name": "scratch-metal-nut.png",
+      "memo": "표면 스크래치 의심",
+      "sourcePath": "data/data_12/002-24.png"
+    },
+    {
+      "category": "tile",
+      "defect": "crack",
+      "name": "crack-tile.png",
+      "memo": "타일 균열 의심",
+      "sourcePath": "data/data_23/002-46.png"
+    },
+    {
+      "category": "metal_nut",
+      "defect": "good",
+      "name": "normal-metal-nut-good.png",
+      "memo": "정상 금속 너트 샘플",
+      "sourcePath": "data/data_12/002-25.png"
+    },
+    {
+      "category": "tile",
+      "defect": "good",
+      "name": "normal-tile-good.png",
+      "memo": "정상 타일 샘플",
+      "sourcePath": "data/data_24/002-48.png"
+    },
+    {
+      "category": "capsule",
+      "defect": "good",
+      "name": "normal-capsule-good.png",
+      "memo": "정상 캡슐 샘플",
+      "sourcePath": "data/data_9/002-18.png"
+    }
+  ]
+}

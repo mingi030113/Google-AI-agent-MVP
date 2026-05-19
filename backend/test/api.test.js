@@ -1,0 +1,226 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { createApp } from "../src/app.js";
+import { ingestManual } from "../src/rag/manual-ingestion-service.js";
+import { SupabaseRepository } from "../src/repositories/supabase-repository.js";
+
+describe("quality agent backend API", () => {
+  let dataDir;
+  let server;
+  let baseUrl;
+
+  before(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "quality-agent-backend-"));
+    server = await createApp({ dataDir });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("returns seeded inspection history and dashboard metrics", async () => {
+    const inspections = await jsonFetch(`${baseUrl}/api/inspections?page=1&pageSize=5`);
+    assert.equal(inspections.items.length, 5);
+    assert.equal(inspections.total, 128);
+
+    const metrics = await jsonFetch(`${baseUrl}/api/dashboard/metrics?startDate=2026-05-12&endDate=2026-05-18`);
+    assert.equal(metrics.summary.totalInspections, 128);
+    assert.equal(metrics.summary.defectiveCount, 17);
+    assert.equal(metrics.trend.length, 7);
+  });
+
+  it("analyzes an uploaded image and accepts feedback", async () => {
+    const form = new FormData();
+    form.append("processId", "process-a");
+    form.append("equipmentId", "eq-a-1");
+    form.append("lotNo", "LOT-TEST-scratch");
+    form.append("memo", "스크래치 의심");
+    form.append("image", new Blob(["fake image bytes"], { type: "image/jpeg" }), "scratch.jpg");
+
+    const analyzed = await jsonFetch(`${baseUrl}/api/inspections/analyze`, {
+      method: "POST",
+      body: form
+    });
+
+    assert.equal(analyzed.inspection.result, "defective");
+    assert.equal(analyzed.inspection.defectType, "scratch");
+
+    const feedback = await jsonFetch(`${baseUrl}/api/inspections/${analyzed.inspection.id}/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        actionTaken: "지그 접촉면 점검 및 청소 완료",
+        reinspectionResult: "normal"
+      })
+    });
+
+    assert.equal(feedback.inspection.status, "closed");
+  });
+
+  it("answers agent questions and generates reports", async () => {
+    const answer = await jsonFetch(`${baseUrl}/api/agent/ask`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "scratch 조치 기준 알려줘", defectType: "scratch" })
+    });
+    assert.equal(answer.fallback, false);
+    assert.ok(answer.sources.length > 0);
+
+    const report = await jsonFetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reportType: "daily",
+        startDate: "2026-05-18",
+        endDate: "2026-05-18"
+      })
+    });
+    assert.match(report.report.title, /품질 리포트/);
+
+    const deleteResponse = await fetch(`${baseUrl}/api/reports/${report.report.id}`, {
+      method: "DELETE"
+    });
+    assert.equal(deleteResponse.status, 204);
+
+    const reports = await jsonFetch(`${baseUrl}/api/reports`);
+    assert.equal(reports.items.some((item) => item.id === report.report.id), false);
+  });
+
+  it("uploads manuals, chunks them, and answers with RAG sources", async () => {
+    const form = new FormData();
+    form.append("title", "스크래치 재발 방지 작업표준");
+    form.append("defectType", "scratch");
+    form.append("checklist", "- 지그 접촉면 마모 확인\n- 이송 레일 청소\n- 동일 LOT 재검사");
+    form.append(
+      "file",
+      new Blob([
+        "스크래치 불량은 지그 접촉면 마모와 이송 레일 오염을 우선 확인한다.\n\n동일 LOT는 조치 이후 재검사를 수행하고 작업자 피드백에 기록한다."
+      ], { type: "text/plain" }),
+      "scratch-standard.txt"
+    );
+
+    const uploaded = await jsonFetch(`${baseUrl}/api/manuals`, {
+      method: "POST",
+      body: form
+    });
+    assert.equal(uploaded.manual.title, "스크래치 재발 방지 작업표준");
+    assert.ok(uploaded.chunks.length >= 1);
+
+    const duplicateForm = new FormData();
+    duplicateForm.append("title", "스크래치 재발 방지 작업표준");
+    duplicateForm.append("defectType", "scratch");
+    duplicateForm.append("checklist", "- 지그 접촉면 재점검\n- 동일 LOT 재검사");
+    duplicateForm.append(
+      "file",
+      new Blob([
+        "스크래치 재발 시 지그 접촉면 재점검과 동일 LOT 재검사를 우선 수행한다.\n\n조치 이후 결과를 검사 피드백에 기록한다."
+      ], { type: "text/plain" }),
+      "scratch-standard-v2.txt"
+    );
+
+    const updated = await jsonFetch(`${baseUrl}/api/manuals`, {
+      method: "POST",
+      body: duplicateForm
+    });
+    assert.equal(updated.manual.id, uploaded.manual.id);
+
+    const manuals = await jsonFetch(`${baseUrl}/api/manuals`);
+    const matchingManuals = manuals.items.filter((manual) => manual.title === "스크래치 재발 방지 작업표준");
+    assert.equal(matchingManuals.length, 1);
+
+    const answer = await jsonFetch(`${baseUrl}/api/agent/ask`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "스크래치가 계속 나면 어디를 봐야 해?", defectType: "scratch" })
+    });
+
+    assert.equal(answer.fallback, false);
+    assert.equal(answer.sources[0].title, "스크래치 재발 방지 작업표준");
+    assert.ok(answer.sources[0].score > 0);
+    assert.ok(answer.checklist.every((item) => !item.label.startsWith("#")));
+    const sourceTitles = answer.sources.map((source) => source.title);
+    assert.equal(new Set(sourceTitles).size, sourceTitles.length);
+
+    const deleteResponse = await fetch(`${baseUrl}/api/manuals/${uploaded.manual.id}`, {
+      method: "DELETE"
+    });
+    assert.equal(deleteResponse.status, 204);
+
+    const remainingManuals = await jsonFetch(`${baseUrl}/api/manuals`);
+    assert.equal(remainingManuals.items.some((manual) => manual.id === uploaded.manual.id), false);
+  });
+});
+
+describe("supabase repository fallback behavior", () => {
+  it("does not break agent answers when manual chunk search fails", async () => {
+    const repository = new SupabaseRepository({
+      url: "https://example.supabase.co",
+      serviceRoleKey: "test-key"
+    });
+    repository.request = async () => {
+      throw new Error("simulated Supabase failure");
+    };
+
+    const chunks = await repository.searchManualChunks({
+      embedding: [],
+      defectType: "scratch",
+      limit: 3
+    });
+
+    assert.deepEqual(chunks, []);
+  });
+});
+
+describe("manual ingestion resilience", () => {
+  it("stores RAG manual data even when original file storage rejects the MIME type", async () => {
+    let savedManual;
+    let savedChunks;
+    let storedContentType;
+    const store = {
+      listManuals: async () => [],
+      saveManualFile: async ({ contentType }) => {
+        storedContentType = contentType;
+        throw new Error("simulated storage rejection");
+      },
+      upsertManualWithChunks: async (manual, chunks) => {
+        savedManual = manual;
+        savedChunks = chunks;
+        return manual;
+      }
+    };
+
+    const result = await ingestManual({
+      fields: {
+        title: "MIME 정규화 기준서",
+        defectType: "scratch",
+        checklist: "- 지그 마모 확인"
+      },
+      file: {
+        filename: "manual.md",
+        contentType: "application/octet-stream",
+        buffer: Buffer.from("# 기준서\n\n- 지그 마모 확인", "utf8")
+      },
+      store
+    });
+
+    assert.equal(storedContentType, "text/markdown");
+    assert.equal(savedManual.title, "MIME 정규화 기준서");
+    assert.equal(savedManual.filePath, undefined);
+    assert.equal(savedChunks.length, 1);
+    assert.equal(result.manual.id, savedManual.id);
+  });
+});
+
+async function jsonFetch(url, options) {
+  const response = await fetch(url, options);
+  const payload = await response.json();
+  assert.ok(response.ok, JSON.stringify(payload));
+  return payload;
+}

@@ -1,0 +1,69 @@
+{
+  "generatedAt": "2026-05-18T05:23:53.603Z",
+  "results": [
+    {
+      "file": "normal-metal-nut-good.png",
+      "lotNo": "DEMO-MVTEC-NORMAL-001",
+      "id": "insp-61286b47",
+      "result": "normal",
+      "defectType": null,
+      "confidence": 0.98,
+      "modelName": "gemini:gemini-2.5-flash",
+      "status": "pending",
+      "imageUrl": "/uploads/seed-normal.svg",
+      "agentAnswer": null,
+      "checklist": []
+    },
+    {
+      "file": "contamination-bottle.png",
+      "lotNo": "DEMO-MVTEC-CONTAMINATION-001",
+      "id": "insp-0e623148",
+      "result": "defective",
+      "defectType": "contamination",
+      "confidence": 0.95,
+      "modelName": "gemini:gemini-2.5-flash",
+      "status": "action_required",
+      "imageUrl": "/uploads/seed-contamination.svg",
+      "agentAnswer": "이물/오염 불량 조치 기준서 기준으로 설비 상태와 작업 조건을 우선 점검하세요.",
+      "checklist": [
+        "세척 노즐 막힘 확인",
+        "에어 블로워 압력 기록 확인",
+        "포장 전 보관 구역 청소"
+      ]
+    },
+    {
+      "file": "scratch-capsule.png",
+      "lotNo": "DEMO-MVTEC-SCRATCH-001",
+      "id": "insp-7c738b87",
+      "result": "defective",
+      "defectType": "scratch",
+      "confidence": 0.95,
+      "modelName": "gemini:gemini-2.5-flash",
+      "status": "action_required",
+      "imageUrl": "/uploads/seed-scratch.svg",
+      "agentAnswer": "스크래치 불량 조치 기준서 기준으로 설비 상태와 작업 조건을 우선 점검하세요.",
+      "checklist": [
+        "지그 마모 상태 확인",
+        "이송 레일 오염 여부 확인",
+        "작업대 이물질 제거"
+      ]
+    },
+    {
+      "file": "crack-tile.png",
+      "lotNo": "DEMO-MVTEC-CRACK-001",
+      "id": "insp-4e78bd2d",
+      "result": "defective",
+      "defectType": "crack",
+      "confidence": 0.95,
+      "modelName": "gemini:gemini-2.5-flash",
+      "status": "action_required",
+      "imageUrl": "/uploads/seed-crack.svg",
+      "agentAnswer": "균열 불량 조치 기준서 기준으로 설비 상태와 작업 조건을 우선 점검하세요.",
+      "checklist": [
+        "가압 조건 이탈 알람 확인",
+        "냉각 시간 편차 확인",
+        "원자재 LOT 변경 여부 확인"
+      ]
+    }
+  ]
+}
