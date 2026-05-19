@@ -313,9 +313,10 @@ export class SupabaseRepository {
 }
 
 function mapInspectionRow(row, publicStorageBase) {
-  const feedback = [...(row.inspection_feedback ?? [])].sort((left, right) =>
-    String(right.created_at).localeCompare(String(left.created_at))
-  )[0];
+  const feedbackHistory = [...(row.inspection_feedback ?? [])]
+    .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+    .map(mapFeedbackRow);
+  const feedback = feedbackHistory[0];
 
   const inspection = {
     id: row.id,
@@ -334,21 +335,27 @@ function mapInspectionRow(row, publicStorageBase) {
     inspectedAt: row.inspected_at,
     memo: row.memo ?? undefined,
     visionAnalysis: row.analyzed_payload?.visionAnalysis,
-    agentGuidance: row.analyzed_payload?.agentGuidance
+    agentGuidance: row.analyzed_payload?.agentGuidance,
+    feedbackHistory
   };
 
   if (feedback) {
-    inspection.feedback = {
-      correctedResult: feedback.corrected_result ?? undefined,
-      correctedDefectType: feedback.corrected_defect_type ?? undefined,
-      actionTaken: feedback.action_taken,
-      reinspectionResult: feedback.reinspection_result ?? undefined,
-      note: feedback.note ?? undefined,
-      createdAt: feedback.created_at
-    };
+    inspection.feedback = feedback;
   }
 
   return inspection;
+}
+
+function mapFeedbackRow(row) {
+  return {
+    id: row.id,
+    correctedResult: row.corrected_result ?? undefined,
+    correctedDefectType: row.corrected_defect_type ?? undefined,
+    actionTaken: row.action_taken,
+    reinspectionResult: row.reinspection_result ?? undefined,
+    note: row.note ?? undefined,
+    createdAt: row.created_at
+  };
 }
 
 function inspectionToRow(inspection) {

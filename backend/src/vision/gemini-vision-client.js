@@ -55,8 +55,9 @@ function buildRequest({ image, fields, process, selectedEquipment }) {
               "You are a manufacturing visual quality inspector.",
               "Classify the uploaded product image for visual defects.",
               "Return only valid JSON with this exact shape:",
-              "{\"result\":\"normal|defective\",\"defectType\":\"scratch|contamination|dent|crack|null\",\"confidence\":0.0,\"reason\":\"short reason\"}",
+              "{\"result\":\"normal|defective\",\"defectType\":\"scratch|contamination|dent|crack|null\",\"confidence\":0.0,\"defectScores\":{\"scratch\":0.0,\"contamination\":0.0,\"dent\":0.0,\"crack\":0.0},\"reason\":\"short reason\"}",
               "Use null defectType when result is normal.",
+              "defectScores must estimate the relative likelihood for each allowed defect type from 0.0 to 1.0.",
               "If uncertain, choose the closest allowed defectType and lower confidence.",
               `Process: ${process.name}`,
               `Equipment: ${selectedEquipment.name}`,
@@ -104,6 +105,7 @@ function normalizeGeminiResult(parsed, { payload, text, modelName }) {
     ? parsed.defectType
     : null;
   const confidence = clampConfidence(Number(parsed.confidence));
+  const defectScores = normalizeDefectScores(parsed.defectScores, { defectType, confidence, result });
 
   return {
     result,
@@ -113,6 +115,7 @@ function normalizeGeminiResult(parsed, { payload, text, modelName }) {
     raw: {
       driver: "gemini",
       reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+      defectScores,
       text,
       usageMetadata: payload.usageMetadata
     }
@@ -124,4 +127,44 @@ function clampConfidence(value) {
     return 0.5;
   }
   return Math.min(Math.max(Math.round(value * 100) / 100, 0), 1);
+}
+
+function normalizeDefectScores(value, { defectType, confidence, result }) {
+  const fallback = buildFallbackScores({ defectType, confidence, result });
+  if (!value || typeof value !== "object") {
+    return fallback;
+  }
+
+  const scores = {};
+  for (const type of ALLOWED_DEFECT_TYPES) {
+    scores[type] = clampConfidence(Number(value[type] ?? fallback[type]));
+  }
+
+  if (defectType && scores[defectType] < confidence) {
+    scores[defectType] = confidence;
+  }
+
+  return scores;
+}
+
+function buildFallbackScores({ defectType, confidence, result }) {
+  const scores = {
+    scratch: 0.08,
+    contamination: 0.08,
+    dent: 0.08,
+    crack: 0.08
+  };
+
+  if (result === "defective" && defectType) {
+    scores[defectType] = confidence;
+    let offset = 0;
+    for (const type of ALLOWED_DEFECT_TYPES) {
+      if (type !== defectType) {
+        scores[type] = clampConfidence(Math.max(0.05, confidence * [0.32, 0.22, 0.14][offset]));
+        offset += 1;
+      }
+    }
+  }
+
+  return scores;
 }

@@ -27,15 +27,29 @@ export interface InspectionDetail extends InspectionListItem {
   operatorName: string;
   modelName: string;
   memo?: string;
-  feedback?: {
-    correctedResult?: InspectionResult;
-    correctedDefectType?: string;
-    actionTaken?: string;
-    reinspectionResult?: InspectionResult;
-    note?: string;
-    createdAt: string;
+  visionAnalysis?: {
+    driver?: string;
+    reason?: string;
+    fallback?: boolean;
+    primaryModel?: string;
+    fallbackModel?: string;
+    signalMatched?: string;
+    defectScores?: Record<string, number>;
+    usageMetadata?: unknown;
   };
+  feedback?: InspectionFeedback;
+  feedbackHistory?: InspectionFeedback[];
   agentGuidance?: AgentGuidance;
+}
+
+export interface InspectionFeedback {
+  id?: string;
+  correctedResult?: InspectionResult;
+  correctedDefectType?: string;
+  actionTaken?: string;
+  reinspectionResult?: InspectionResult;
+  note?: string;
+  createdAt: string;
 }
 
 export interface AgentGuidance {
@@ -49,6 +63,12 @@ export interface InspectionListResponse {
   page: number;
   pageSize: number;
   total: number;
+  summary: {
+    total: number;
+    actionRequired: number;
+    pendingReview: number;
+    averageConfidence: number;
+  };
 }
 
 export interface DashboardMetricsResponse {
@@ -56,6 +76,13 @@ export interface DashboardMetricsResponse {
     totalInspections: number;
     defectiveCount: number;
     defectRate: number;
+    todayDate?: string;
+    todayInspections?: number;
+    todayDefectiveCount?: number;
+    inspectionDelta?: number;
+    defectiveDelta?: number;
+    defectRateDelta?: number;
+    actionRequiredCount?: number;
     topDefectType: string | null;
     highRiskProcessCount: number;
     highRiskEquipmentCount: number;

@@ -78,9 +78,23 @@ export function toListItem(inspection) {
 }
 
 export function filterInspections(inspections, query) {
+  const keyword = query.q?.trim().toLowerCase();
   return inspections.filter((inspection) => {
     const inspectedDate = inspection.inspectedAt.slice(0, 10);
+    const searchTarget = [
+      inspection.lotNo,
+      inspection.processName,
+      inspection.equipmentName,
+      inspection.result,
+      inspection.defectType,
+      inspection.status
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
     return (
+      (!keyword || searchTarget.includes(keyword)) &&
       (!query.startDate || inspectedDate >= query.startDate) &&
       (!query.endDate || inspectedDate <= query.endDate) &&
       (!query.processId || inspection.processId === query.processId) &&
@@ -89,6 +103,23 @@ export function filterInspections(inspections, query) {
       (!query.status || inspection.status === query.status)
     );
   });
+}
+
+export function summarizeInspections(inspections) {
+  const total = inspections.length;
+  const actionRequired = inspections.filter((inspection) => inspection.status === "action_required").length;
+  const pendingReview = inspections.filter((inspection) => inspection.status === "pending").length;
+  const averageConfidence =
+    total === 0
+      ? 0
+      : Math.round((inspections.reduce((sum, inspection) => sum + Number(inspection.confidence ?? 0), 0) / total) * 1000) / 10;
+
+  return {
+    total,
+    actionRequired,
+    pendingReview,
+    averageConfidence
+  };
 }
 
 export function paginate(items, query) {
@@ -120,20 +151,23 @@ export function applyFeedback(inspection, feedback) {
       : correctedResult === "defective"
         ? "action_required"
         : "reviewed";
+  const feedbackEntry = {
+    correctedResult: feedback.correctedResult,
+    correctedDefectType: feedback.correctedDefectType,
+    actionTaken: feedback.actionTaken.trim(),
+    reinspectionResult: feedback.reinspectionResult,
+    note: feedback.note,
+    createdAt: toKstIsoString()
+  };
+  const existingHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
 
   return {
     ...inspection,
     result: correctedResult,
     defectType: correctedDefectType,
     status,
-    feedback: {
-      correctedResult: feedback.correctedResult,
-      correctedDefectType: feedback.correctedDefectType,
-      actionTaken: feedback.actionTaken.trim(),
-      reinspectionResult: feedback.reinspectionResult,
-      note: feedback.note,
-      createdAt: toKstIsoString()
-    }
+    feedback: feedbackEntry,
+    feedbackHistory: [feedbackEntry, ...existingHistory]
   };
 }
 

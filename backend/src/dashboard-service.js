@@ -60,12 +60,26 @@ export function buildDashboardMetrics(inspections, query = {}) {
 
   const defectiveCount = countDefective(scoped);
   const topDefectType = defectTypeDistribution[0]?.defectType ?? null;
+  const todayItems = scoped.filter((inspection) => inspection.inspectedAt.startsWith(endDate));
+  const previousDate = addDays(endDate, -1);
+  const previousItems = scoped.filter((inspection) => inspection.inspectedAt.startsWith(previousDate));
+  const todayDefectiveCount = countDefective(todayItems);
+  const previousDefectiveCount = countDefective(previousItems);
+  const todayDefectRate = defectRate(todayDefectiveCount, todayItems.length);
+  const previousDefectRate = defectRate(previousDefectiveCount, previousItems.length);
 
   return {
     summary: {
       totalInspections: scoped.length,
       defectiveCount,
       defectRate: defectRate(defectiveCount, scoped.length),
+      todayDate: endDate,
+      todayInspections: todayItems.length,
+      todayDefectiveCount,
+      inspectionDelta: todayItems.length - previousItems.length,
+      defectiveDelta: todayDefectiveCount - previousDefectiveCount,
+      defectRateDelta: Math.round((todayDefectRate - previousDefectRate) * 100) / 100,
+      actionRequiredCount: scoped.filter((inspection) => inspection.status === "action_required").length,
       topDefectType,
       highRiskProcessCount: processMetrics.filter((metric) => metric.riskLevel === "high").length,
       highRiskEquipmentCount: equipmentMetrics.filter((metric) => metric.riskLevel === "high").length

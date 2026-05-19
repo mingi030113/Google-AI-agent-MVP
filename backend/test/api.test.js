@@ -29,6 +29,16 @@ describe("quality agent backend API", () => {
     const inspections = await jsonFetch(`${baseUrl}/api/inspections?page=1&pageSize=5`);
     assert.equal(inspections.items.length, 5);
     assert.equal(inspections.total, 128);
+    assert.deepEqual(inspections.summary, {
+      total: 128,
+      actionRequired: 17,
+      pendingReview: 82,
+      averageConfidence: 90.3
+    });
+
+    const searched = await jsonFetch(`${baseUrl}/api/inspections?page=1&pageSize=5&q=crack`);
+    assert.equal(searched.summary.total, 3);
+    assert.equal(searched.summary.actionRequired, 3);
 
     const metrics = await jsonFetch(`${baseUrl}/api/dashboard/metrics?startDate=2026-05-12&endDate=2026-05-18`);
     assert.equal(metrics.summary.totalInspections, 128);

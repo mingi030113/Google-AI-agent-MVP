@@ -43,6 +43,7 @@ http://localhost:4000/api/health
 
 ## 주요 기능
 
+- MVP 로그인과 역할별 네비게이션
 - 이미지 기반 검사 생성
 - 검사 이력/상세/피드백
 - 대시보드 품질 지표
@@ -50,6 +51,10 @@ http://localhost:4000/api/health
 - 조치 Agent 질의응답
 - 리포트 생성, 삭제
 - JSON 저장소와 Supabase 저장소 지원
+
+## 데모 로그인
+
+`/login`에서 역할을 선택해 접속합니다. 현재 단계에서는 Supabase Auth 직접 연동 전이며, 브라우저 localStorage 기반 MVP 세션으로 역할별 화면 접근을 검증합니다.
 
 ## 검증
 
@@ -62,6 +67,14 @@ npm test
 cd frontend
 npm run build
 ```
+
+서버 실행 후 전체 MVP 스모크 테스트:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate_mvp.ps1
+```
+
+스모크 테스트는 백엔드 health, 프론트 주요 라우트, 대시보드, 검사이력, Agent, 기준서 업로드/삭제, 리포트 생성/삭제를 확인합니다.
 
 ## 보안 주의
 

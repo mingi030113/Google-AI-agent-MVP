@@ -88,10 +88,15 @@ export default function ManualsPage() {
     <AppShell>
       <PageHeader title="매뉴얼 관리" description="Agent가 참조할 품질 기준서를 업로드하고 검색 상태를 확인합니다." />
       {error ? <div className="error">{error}</div> : null}
-      {message ? <div className="empty">{message}</div> : null}
+      {message ? <div className="notice">{message}</div> : null}
       <div className="grid two">
         <form className="panel form" onSubmit={handleUpload}>
-          <h2>매뉴얼 업로드</h2>
+          <div className="panel-header">
+            <div>
+              <h2>매뉴얼 업로드</h2>
+              <p className="panel-subtitle">텍스트 기준서를 등록하면 Agent 검색 출처로 반영됩니다.</p>
+            </div>
+          </div>
           <div className="field">
             <label>기준서명</label>
             <input
@@ -132,41 +137,48 @@ export default function ManualsPage() {
           <div className="empty">현재 백엔드는 텍스트와 마크다운 파일을 RAG chunk로 변환합니다.</div>
         </form>
         <div className="panel">
-          <h2>기준서 목록</h2>
+          <div className="panel-header">
+            <div>
+              <h2>기준서 목록</h2>
+              <p className="panel-subtitle">삭제한 기준서는 Agent 검색 대상에서 제외됩니다.</p>
+            </div>
+          </div>
           {manuals.length === 0 ? <div className="empty">기준서를 불러오는 중입니다.</div> : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>기준서</th>
-                  <th>유형</th>
-                  <th>상태</th>
-                  <th>관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {manuals.map((manual) => (
-                  <tr key={manual.id}>
-                    <td>
-                      <strong>{manual.title}</strong>
-                      <p>{manual.excerpt}</p>
-                    </td>
-                    <td>{manual.defectType ?? "-"}</td>
-                    <td><span className="badge low">{manual.embeddingStatus ?? "completed"}</span></td>
-                    <td>
-                      <button
-                        className="button danger"
-                        disabled={deletingId === manual.id}
-                        onClick={() => deleteManual(manual)}
-                        title="기준서 삭제"
-                        type="button"
-                      >
-                        <Trash2 size={16} /> {deletingId === manual.id ? "삭제 중" : "삭제"}
-                      </button>
-                    </td>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>기준서</th>
+                    <th>유형</th>
+                    <th>상태</th>
+                    <th>관리</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {manuals.map((manual) => (
+                    <tr key={manual.id}>
+                      <td>
+                        <strong>{manual.title}</strong>
+                        <p className="manual-excerpt">{manual.excerpt}</p>
+                      </td>
+                      <td>{manual.defectType ?? "-"}</td>
+                      <td><span className="badge low">{manual.embeddingStatus ?? "completed"}</span></td>
+                      <td>
+                        <button
+                          className="button danger"
+                          disabled={deletingId === manual.id}
+                          onClick={() => deleteManual(manual)}
+                          title="기준서 삭제"
+                          type="button"
+                        >
+                          <Trash2 size={16} /> {deletingId === manual.id ? "삭제 중" : "삭제"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>

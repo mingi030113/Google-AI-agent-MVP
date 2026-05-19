@@ -18,6 +18,7 @@ import {
   applyFeedback,
   filterInspections,
   paginate,
+  summarizeInspections,
   toListItem
 } from "./inspection-service.js";
 import { buildDashboardMetrics } from "./dashboard-service.js";
@@ -83,9 +84,11 @@ async function routeRequest({ request, response, store, visionClient }) {
     }
     const inspections = await store.listInspections();
     const filtered = filterInspections(inspections, query)
-      .sort((left, right) => right.inspectedAt.localeCompare(left.inspectedAt))
-      .map(toListItem);
-    sendJson(response, 200, paginate(filtered, query));
+      .sort((left, right) => right.inspectedAt.localeCompare(left.inspectedAt));
+    sendJson(response, 200, {
+      ...paginate(filtered.map(toListItem), query),
+      summary: summarizeInspections(filtered)
+    });
     return;
   }
 

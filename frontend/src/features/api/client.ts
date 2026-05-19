@@ -38,7 +38,7 @@ export function uploadBase(path: string) {
 export const client = {
   masterData: () => api<MasterData>("/api/master-data"),
   inspections: (params: Record<string, string> = {}) => {
-    const query = new URLSearchParams({ page: "1", pageSize: "20", ...params });
+    const query = new URLSearchParams({ page: "1", pageSize: "10", ...params });
     return api<InspectionListResponse>(`/api/inspections?${query}`);
   },
   inspection: (id: string) => api<{ inspection: InspectionDetail }>(`/api/inspections/${id}`),

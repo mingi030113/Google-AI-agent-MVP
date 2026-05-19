@@ -62,7 +62,12 @@ export default function ReportsPage() {
       <div className="grid two">
         <div className="panel">
           <form className="form" onSubmit={submit}>
-            <h2>리포트 생성</h2>
+            <div className="panel-header">
+              <div>
+                <h2>리포트 생성</h2>
+                <p className="panel-subtitle">기간을 선택해 품질 요약과 권장 조치를 생성합니다.</p>
+              </div>
+            </div>
             <div className="grid two">
               <div className="field">
                 <label>유형</label>
@@ -82,39 +87,51 @@ export default function ReportsPage() {
             </div>
             <button className="button"><FilePlus size={16} /> 생성</button>
           </form>
-          <h2 style={{ marginTop: 20 }}>리포트 목록</h2>
+          <div className="panel-header" style={{ marginTop: 20 }}>
+            <div>
+              <h2>리포트 목록</h2>
+              <p className="panel-subtitle">생성된 리포트를 선택하거나 삭제합니다.</p>
+            </div>
+          </div>
           {reports.length === 0 ? <div className="empty">생성된 리포트가 없습니다.</div> : (
-            <table className="table">
-              <tbody>
-                {reports.map((report) => (
-                  <tr key={report.id}>
-                    <td><button className="button secondary" onClick={() => setSelected(report)}>{report.title}</button></td>
-                    <td>{report.createdAt.slice(0, 10)}</td>
-                    <td>
-                      <button
-                        className="button danger"
-                        disabled={deletingId === report.id}
-                        onClick={() => deleteReport(report)}
-                        title="리포트 삭제"
-                        type="button"
-                      >
-                        <Trash2 size={16} /> {deletingId === report.id ? "삭제 중" : "삭제"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table className="table">
+                <tbody>
+                  {reports.map((report) => (
+                    <tr key={report.id}>
+                      <td><button className="button secondary" onClick={() => setSelected(report)}>{report.title}</button></td>
+                      <td>{report.createdAt.slice(0, 10)}</td>
+                      <td>
+                        <button
+                          className="button danger"
+                          disabled={deletingId === report.id}
+                          onClick={() => deleteReport(report)}
+                          title="리포트 삭제"
+                          type="button"
+                        >
+                          <Trash2 size={16} /> {deletingId === report.id ? "삭제 중" : "삭제"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
         <div className="panel">
-          <h2>리포트 보기</h2>
+          <div className="panel-header">
+            <div>
+              <h2>리포트 보기</h2>
+              <p className="panel-subtitle">핵심 지표와 개선 액션을 검토합니다.</p>
+            </div>
+          </div>
           {!selected ? (
             <div className="empty">리포트를 선택하세요.</div>
           ) : (
             <div className="grid">
               <h3>{selected.title}</h3>
-              <p>{selected.summary}</p>
+              <p className="report-summary">{selected.summary}</p>
               <div className="grid two">
                 <div className="card metric">검사<strong>{selected.metrics.summary.totalInspections}건</strong></div>
                 <div className="card metric">불량률<strong>{selected.metrics.summary.defectRate}%</strong></div>
