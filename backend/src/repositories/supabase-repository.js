@@ -1,4 +1,5 @@
 import { equipment, manuals, processes } from "../domain.js";
+import { cosineSimilarity, tokenize } from "../rag/embedding.js";
 
 export class SupabaseRepository {
   constructor({
@@ -80,6 +81,30 @@ export class SupabaseRepository {
     return rows.map((row) => mapInspectionRow(row, this.publicStorageBase()));
   }
 
+  async searchInspectionHistory(criteria = {}) {
+    const params = new URLSearchParams();
+    params.set("select", "*,processes(name),equipment!inspections_equipment_process_fk(name),inspection_feedback(*)");
+    params.set("order", "inspected_at.desc");
+    params.set("limit", "80");
+
+    if (criteria.defectType) {
+      params.set("defect_type", `eq.${criteria.defectType}`);
+    }
+
+    const anchorDate = criteria.currentInspection?.inspectedAt ? new Date(criteria.currentInspection.inspectedAt) : null;
+    if (anchorDate && !Number.isNaN(anchorDate.getTime())) {
+      const startDate = new Date(anchorDate.getTime() - 30 * 86_400_000).toISOString();
+      const endDate = new Date(anchorDate.getTime() + 1 * 86_400_000).toISOString();
+      params.set("inspected_at", `gte.${startDate}`);
+      params.append("inspected_at", `lte.${endDate}`);
+    }
+
+    const rows = await this.request(`/rest/v1/inspections?${params.toString()}`);
+    const inspections = rows.map((row) => mapInspectionRow(row, this.publicStorageBase()));
+    const { findSimilarInspectionCases } = await import("../similar-case-service.js");
+    return findSimilarInspectionCases(inspections, criteria);
+  }
+
   async getInspection(id) {
     const rows = await this.request(
       `/rest/v1/inspections?id=eq.${encodeURIComponent(id)}&select=*,processes(name),equipment!inspections_equipment_process_fk(name),inspection_feedback(*)&limit=1`
@@ -156,7 +181,11 @@ export class SupabaseRepository {
         summary: report.summary,
         risk_processes: report.riskProcesses,
         recommended_actions: report.recommendedActions,
-        metrics: report.metrics,
+        metrics: {
+          ...report.metrics,
+          reportAnalysis: report.analysis,
+          reportDriver: report.reportDriver
+        },
         created_at: report.createdAt
       })
     });
@@ -256,15 +285,50 @@ export class SupabaseRepository {
       });
       return rows.map(mapManualChunkMatchRow);
     } catch {
-      try {
-        const rows = await this.request(
-          `/rest/v1/manual_chunks?select=id,manual_id,chunk_index,content,metadata&limit=${Number(limit)}&order=created_at.desc`
-        );
-        return rows.map((row) => ({ ...mapManualChunkRow(row), score: 0.5 }));
-      } catch {
-        return [];
-      }
+      return this.searchManualChunksLocally({ embedding, defectType, limit });
     }
+  }
+
+  async searchManualChunksLocally({ embedding, defectType, limit = 3 }) {
+    try {
+      const rows = await this.fetchManualChunkCandidates({ defectType, limit });
+      const scored = rows
+        .map((row) => {
+          const chunk = mapManualChunkRow(row);
+          const chunkEmbedding = parseEmbedding(row.embedding);
+          const vectorScore = chunkEmbedding.length > 0
+            ? cosineSimilarity(embedding, chunkEmbedding)
+            : lexicalSimilarity(`${chunk.metadata?.title ?? ""}\n${chunk.content}`, defectType ?? "");
+          const defectBoost = defectType && chunk.metadata?.defectType === defectType ? 0.06 : 0;
+          return {
+            ...chunk,
+            score: Math.max(0, Math.min(vectorScore + defectBoost, 0.99))
+          };
+        })
+        .filter((chunk) => chunk.score > 0.01)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, Number(limit));
+
+      return scored;
+    } catch {
+      return [];
+    }
+  }
+
+  async fetchManualChunkCandidates({ defectType, limit }) {
+    const candidateLimit = Math.min(Math.max(Number(limit) * 10, 20), 80);
+    const base = `/rest/v1/manual_chunks?select=id,manual_id,chunk_index,content,metadata,embedding&limit=${candidateLimit}&order=created_at.desc`;
+
+    if (!defectType) {
+      return this.request(base);
+    }
+
+    const filtered = await this.request(`${base}&metadata->>defectType=eq.${encodeURIComponent(defectType)}`);
+    if (filtered.length > 0) {
+      return filtered;
+    }
+
+    return this.request(base);
   }
 
   async request(path, init = {}) {
@@ -391,6 +455,8 @@ function mapReportRow(row) {
     riskProcesses: row.risk_processes ?? [],
     recommendedActions: row.recommended_actions ?? [],
     metrics: row.metrics ?? {},
+    analysis: row.analysis ?? row.metrics?.reportAnalysis ?? undefined,
+    reportDriver: row.report_driver ?? row.metrics?.reportDriver ?? undefined,
     createdAt: row.created_at
   };
 }
@@ -414,6 +480,34 @@ function mapManualChunkMatchRow(row) {
     metadata: row.metadata ?? {},
     score: Number(row.score ?? row.similarity ?? 0)
   };
+}
+
+function parseEmbedding(value) {
+  if (Array.isArray(value)) {
+    return value.map(Number).filter(Number.isFinite);
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  return value
+    .replace(/^\s*\[/, "")
+    .replace(/\]\s*$/, "")
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter(Number.isFinite);
+}
+
+function lexicalSimilarity(text, query) {
+  const textTokens = new Set(tokenize(text));
+  const queryTokens = tokenize(query);
+  if (textTokens.size === 0 || queryTokens.length === 0) {
+    return 0;
+  }
+
+  const matches = queryTokens.filter((token) => textTokens.has(token)).length;
+  return matches / Math.max(queryTokens.length, 1);
 }
 
 function encodeURIComponentPath(path) {

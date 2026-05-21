@@ -3,16 +3,22 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
+  ArrowRight,
   Bot,
+  BookOpen,
   CheckCircle2,
   ClipboardList,
   ExternalLink,
+  FileCheck2,
   FileSearch,
   FileText,
-  HelpCircle,
+  Gauge,
+  MessageSquareText,
   RefreshCcw,
   Search,
   Send,
+  ShieldCheck,
   Sparkles,
   Wrench
 } from "lucide-react";
@@ -74,6 +80,8 @@ export default function AgentPage() {
   }, []);
 
   const risk = inspection ? riskFor(inspection) : { label: "-", className: "low" };
+  const lastTurn = chatHistory.at(-1);
+  const evidenceResponse = answer;
   const sourceTitles = useMemo(() => {
     const titles = inspection?.agentGuidance?.sources.map((source) => source.title) ?? [];
     return titles.length > 0 ? titles : ["외관 검사 SOP", "불량 조치 기준서", "설비 점검 기준서", "작업 표준서"];
@@ -158,8 +166,8 @@ export default function AgentPage() {
     <AppShell>
       <div className="agent-titlebar">
         <div>
-          <h1><Sparkles size={26} /> 조치 Agent</h1>
-          <p>AI 검사 결과와 기준서를 바탕으로 후속 조치를 질의하고 문서화합니다.</p>
+          <h1><Sparkles size={26} /> Agent 대화</h1>
+          <p>검사 이력을 선택한 뒤 해당 검사 결과, 기준서, 조치 이력을 기반으로 답변합니다.</p>
         </div>
       </div>
 
@@ -168,8 +176,8 @@ export default function AgentPage() {
       <div className="agent-workspace">
         <aside className="agent-context-card">
           <div className="agent-panel-head">
-            <h2><Bot size={18} /> 검사 이력 선택</h2>
-            <p>Agent와 대화할 검사 건을 먼저 선택합니다.</p>
+            <h2><Bot size={18} /> 검사 컨텍스트</h2>
+            <p>Agent가 참조할 검사 건을 선택합니다.</p>
           </div>
 
           {loading ? (
@@ -190,9 +198,11 @@ export default function AgentPage() {
                     ))}
                   </select>
                 </label>
-                <button className="button" type="button" disabled={!selectedInspectionId || contextLoading} onClick={() => loadInspectionContext()}>
-                  {contextLoading ? "연결 중" : "대화 시작"}
-                </button>
+                <div className="agent-select-actions">
+                  <button className="button" type="button" disabled={!selectedInspectionId || contextLoading} onClick={() => loadInspectionContext()}>
+                    {contextLoading ? "연결 중" : "대화 시작"}
+                  </button>
+                </div>
               </div>
 
               {!inspection ? (
@@ -204,19 +214,12 @@ export default function AgentPage() {
               ) : (
                 <>
                   <div className="agent-active-context-head">
-                    <strong>연결된 검사 컨텍스트</strong>
+                    <div>
+                      <span>현재 분석 대상</span>
+                      <strong>{inspection.id}</strong>
+                    </div>
                     <button type="button" onClick={clearContext}>선택 해제</button>
                   </div>
-                  <dl className="agent-context-list">
-                    <div><dt>LOT</dt><dd>{inspection.lotNo}</dd></div>
-                    <div><dt>공정</dt><dd>{inspection.processName}</dd></div>
-                    <div><dt>설비</dt><dd>{inspection.equipmentName}</dd></div>
-                    <div><dt>불량 유형</dt><dd>{inspection.defectType ?? "-"}</dd></div>
-                    <div><dt>신뢰도</dt><dd>{Math.round(inspection.confidence * 100)}%</dd></div>
-                    <div><dt>위험도</dt><dd><span className={`agent-risk ${risk.className}`}>{risk.label}</span></dd></div>
-                    <div><dt>상태</dt><dd><span className="agent-status">{statusLabel(inspection.status)}</span></dd></div>
-                  </dl>
-
                   <div className="agent-image-preview">
                     <img src={uploadBase(inspection.imageUrl)} alt="검사 이미지" />
                     {inspection.result === "defective" ? (
@@ -225,6 +228,23 @@ export default function AgentPage() {
                       </span>
                     ) : null}
                   </div>
+                  <div className="agent-context-summary">
+                    <span className={`agent-risk ${inspection.result === "defective" ? "medium" : "low"}`}>
+                      {inspection.result === "defective" ? "불량" : "정상"}
+                    </span>
+                    <span className={`agent-risk ${risk.className}`}>{risk.label}</span>
+                    <span className="agent-status">{statusLabel(inspection.status)}</span>
+                  </div>
+                  <dl className="agent-context-list">
+                    <div><dt>LOT 번호</dt><dd>{inspection.lotNo}</dd></div>
+                    <div><dt>검사 일시</dt><dd>{formatDateTime(inspection.inspectedAt)}</dd></div>
+                    <div><dt>설비</dt><dd>{inspection.equipmentName}</dd></div>
+                    <div><dt>공정</dt><dd>{inspection.processName}</dd></div>
+                    <div><dt>불량 유형</dt><dd>{inspection.defectType ?? "-"}</dd></div>
+                    <div><dt>판정 결과</dt><dd><span className={`agent-risk ${inspection.result === "defective" ? "medium" : "low"}`}>{inspection.result === "defective" ? "불량" : "정상"}</span></dd></div>
+                    <div><dt>위험도</dt><dd><span className={`agent-risk ${risk.className}`}>{risk.label}</span></dd></div>
+                    <div><dt>조치 상태</dt><dd><span className="agent-status">{statusLabel(inspection.status)}</span></dd></div>
+                  </dl>
                 </>
               )}
             </>
@@ -232,17 +252,6 @@ export default function AgentPage() {
 
           {inspection ? (
             <>
-              <div className="agent-side-section">
-                <h3>빠른 질문</h3>
-                <div className="agent-quick-grid">
-                  {quickQuestionTemplates.map((item) => (
-                    <button type="button" key={item.key} onClick={() => applyQuickQuestion(item.label)}>
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="agent-side-section">
                 <h3>참조 문서 범위</h3>
                 <div className="agent-source-chips">
@@ -260,43 +269,39 @@ export default function AgentPage() {
         </aside>
 
         <section className="agent-chat-card">
-          <div className="agent-panel-head">
-            <h2><Bot size={18} /> Agent 대화</h2>
-            <p>검사 이력을 선택한 뒤 해당 검사 결과, 기준서, 조치 이력을 기반으로 답변합니다.</p>
-          </div>
-
-          <div className="agent-state-row">
-            <span><CheckCircle2 size={16} /> 대화 준비 완료</span>
-            <span className={inspection ? "connected" : "pending"}><CheckCircle2 size={16} /> {inspection ? "검사 컨텍스트 연결" : "검사 선택 대기"}</span>
-            <span><HelpCircle size={16} /> 질문 대기 중</span>
-          </div>
-
           {chatHistory.length === 0 ? (
             <AgentReadyPanel inspection={inspection} applyQuickQuestion={applyQuickQuestion} />
           ) : (
             <div className="agent-conversation-panel">
               {chatHistory.map((entry) => (
-                <AgentChatTurn entry={entry} inspection={inspection} key={entry.id} />
+                <AgentChatTurn entry={entry} inspection={inspection} key={entry.id} isLatest={entry.id === lastTurn?.id} />
               ))}
             </div>
           )}
 
           <form className="agent-input-row" onSubmit={submit}>
+            <div className="agent-input-icon"><Bot size={18} /></div>
             <input
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="후속 조치, 재검사 기준, 작업자 안내문 등을 질문하세요."
+              placeholder="원인, 조치 순서, 재검사 기준을 질문하세요."
               maxLength={1000}
               disabled={!inspection}
             />
-            <span>{question.length}/1000</span>
+            <div className="agent-input-meta">
+              <span>{inspection ? "선택된 검사 컨텍스트 기준" : "검사 컨텍스트 필요"}</span>
+              <em>{question.length}/1000</em>
+            </div>
             <button className="button" disabled={!inspection || asking || !question.trim()}>
-              <Send size={16} /> 전송
+              <Send size={16} />
+              <span>전송</span>
             </button>
           </form>
 
           <p className="agent-disclaimer">이 답변은 내부 기준서와 검사 이력을 기반으로 생성됩니다.</p>
         </section>
+
+        <AgentEvidencePanel response={evidenceResponse} />
       </div>
     </AppShell>
   );
@@ -323,46 +328,69 @@ function AgentReadyPanel({
 }) {
   return (
     <div className="agent-ready-panel">
-      <div className="agent-ready-brand"><Bot size={44} /></div>
-      <div>
-        <h3>{inspection ? "후속 조치 질의를 시작하세요" : "검사 이력을 선택해 대화를 시작하세요"}</h3>
-        <p>
-          {inspection
-            ? "AI 검사 결과와 내부 기준서를 바탕으로 조치 순서, 재검사 기준, 작업자 안내문, 리포트 반영 문구를 생성합니다."
-            : "왼쪽에서 Agent와 대화할 검사 이력을 선택하면 해당 검사 컨텍스트가 연결됩니다."}
-        </p>
-      </div>
-      <div className="agent-capability-grid">
-        <Capability icon={<Wrench size={18} />} title="조치 순서 안내" description="불량 대응 절차를 단계별로 안내" />
-        <Capability icon={<FileText size={18} />} title="리포트 요약 문구 생성" description="품질 리포트에 반영할 요약 문구 생성" />
-        <Capability icon={<RefreshCcw size={18} />} title="재검사 기준 생성" description="재검사 조건 및 승인 기준 정리" />
-        <Capability icon={<Search size={18} />} title="유사 사례 검색" description="과거 유사 불량 사례와 조치 이력 검색" />
-        <Capability icon={<ClipboardList size={18} />} title="작업자 전달용 안내문 작성" description="현장 작업자에게 전달할 안내문 자동 작성" />
-      </div>
-
-      <div className="agent-suggestion-row">
-        <strong>추천 질문</strong>
+      <div className="agent-ready-hero">
+        <div className="agent-ready-brand"><Bot size={38} /></div>
         <div>
-          {quickQuestionTemplates.slice(0, 5).map((item) => (
-            <button type="button" key={item.key} onClick={() => applyQuickQuestion(item.label)} disabled={!inspection}>
-              {item.label}
-            </button>
-          ))}
+          <span>{inspection ? "검사 컨텍스트 연결됨" : "컨텍스트 대기"}</span>
+          <h3>{inspection ? "무엇을 확인할까요?" : "검사 이력을 선택해 대화를 시작하세요"}</h3>
+          <p>
+            {inspection
+              ? `${inspection.lotNo} · ${inspection.equipmentName} · ${inspection.defectType ?? "검사 결과"} 기준으로 기준서와 유사 조치 이력을 함께 조회합니다.`
+              : "왼쪽에서 Agent와 대화할 검사 이력을 선택하면 해당 검사 컨텍스트가 연결됩니다."}
+          </p>
         </div>
       </div>
 
+      <div className="agent-ready-flow">
+        <span><CheckCircle2 size={14} /> 검사 컨텍스트</span>
+        <span><BookOpen size={14} /> 기준서 검색</span>
+        <span><Gauge size={14} /> 유사 이력 비교</span>
+        <span><ShieldCheck size={14} /> 조치 답변 생성</span>
+      </div>
+
+      <div className="agent-question-card-grid">
+        <button type="button" onClick={() => applyQuickQuestion("원인 점검 항목 알려줘")} disabled={!inspection}>
+          <span><Search size={18} /></span>
+          <strong>원인 분석</strong>
+          <p>불량 원인과 우선 점검 항목 확인</p>
+        </button>
+        <button type="button" onClick={() => applyQuickQuestion("조치 순서 알려줘")} disabled={!inspection}>
+          <span><Wrench size={18} /></span>
+          <strong>재발 방지 조치</strong>
+          <p>현장 조치 순서와 예방 대책 정리</p>
+        </button>
+        <button type="button" onClick={() => applyQuickQuestion("재검사 기준 알려줘")} disabled={!inspection}>
+          <span><RefreshCcw size={18} /></span>
+          <strong>재검사 기준</strong>
+          <p>합격 기준과 확인 조건 생성</p>
+        </button>
+        <button type="button" onClick={() => applyQuickQuestion("작업자 안내 문구 작성")} disabled={!inspection}>
+          <span><MessageSquareText size={18} /></span>
+          <strong>작업자 안내</strong>
+          <p>현장 전달용 안내 문구 작성</p>
+        </button>
+      </div>
+
       <div className="agent-waiting-box">
-        <FileSearch size={34} />
+        <span className="agent-live-dot" />
         <div>
-          <strong>Agent 답변 대기 중</strong>
-          <p>질문을 입력하면 AI가 답변을 생성합니다.</p>
+          <strong>{inspection ? "Agent 준비 완료" : "검사 컨텍스트를 기다리는 중"}</strong>
+          <p>{inspection ? "질문을 입력하면 기준서와 유사 조치 이력을 조회한 뒤 답변합니다." : "검사 이력을 연결하면 추천 질문이 활성화됩니다."}</p>
         </div>
       </div>
     </div>
   );
 }
 
-function AgentChatTurn({ entry, inspection }: { entry: AgentChatEntry; inspection: InspectionDetail | null }) {
+function AgentChatTurn({
+  entry,
+  inspection,
+  isLatest
+}: {
+  entry: AgentChatEntry;
+  inspection: InspectionDetail | null;
+  isLatest: boolean;
+}) {
   return (
     <article className="agent-chat-turn">
       <div className="agent-user-bubble">
@@ -374,47 +402,84 @@ function AgentChatTurn({ entry, inspection }: { entry: AgentChatEntry; inspectio
       <div className="agent-response-shell">
         <div className="agent-avatar"><Bot size={20} /></div>
         {entry.status === "pending" ? (
-          <div className="agent-response-loading">
-            <strong>Agent가 답변을 생성하고 있습니다.</strong>
-            <p>검사 결과, 기준서, 조치 이력을 조회해 응답을 구성합니다.</p>
-          </div>
+          <AgentActivityStream />
         ) : entry.status === "error" ? (
           <div className="error">{entry.errorMessage}</div>
         ) : entry.response ? (
-          <AgentStructuredAnswer response={entry.response} inspection={inspection} />
+          <AgentStructuredAnswer response={entry.response} inspection={inspection} animate={isLatest} />
         ) : null}
       </div>
     </article>
   );
 }
 
-function AgentStructuredAnswer({ response, inspection }: { response: AskAgentResponse; inspection: InspectionDetail | null }) {
+function AgentActivityStream() {
+  return (
+    <div className="agent-response-loading">
+      <div className="agent-live-line">
+        <span className="agent-live-dot" />
+        <p>
+          <span>검사 컨텍스트 확인 중</span>
+          <em>RAG 기준서 검색 중</em>
+          <em>유사 조치 이력 비교 중</em>
+          <em>답변 문장 구성 중</em>
+        </p>
+      </div>
+      <div className="agent-loading-skeleton" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
+  );
+}
+
+function AgentStructuredAnswer({
+  response,
+  inspection,
+  animate
+}: {
+  response: AskAgentResponse;
+  inspection: InspectionDetail | null;
+  animate: boolean;
+}) {
   const reinspectionItems = buildReinspectionItems(response, inspection);
   const workerMessage = buildWorkerMessage(response, inspection);
-  const averageScore = response.sources.length === 0
-    ? 0
-    : Math.round((response.sources.reduce((sum, source) => sum + source.score, 0) / response.sources.length) * 100) / 100;
+  const typedAnswer = useTypewriter(response.answer, animate ? 12 : 0);
+  const isTyping = typedAnswer.length < response.answer.length;
+  const similarCount = response.similarCases?.length ?? 0;
 
   return (
     <div className="agent-structured-answer">
-      <div className="agent-answer-badges">
-        <span><CheckCircle2 size={14} /> RAG 검색 완료</span>
-        <span><CheckCircle2 size={14} /> 참조 문서 {response.sources.length}건</span>
-        {averageScore > 0 ? <span>평균 유사도 {averageScore.toFixed(2)}</span> : null}
-        <span><CheckCircle2 size={14} /> 응답 생성 완료</span>
+      <div className="agent-answer-decision-head">
+        <div>
+          <span className="agent-status-light" />
+          <strong>AI 판단 결과</strong>
+          <p>{inspection ? `${inspection.equipmentName} · ${inspection.defectType ?? "검사"} 기준 분석` : "기준서 기반 조치 분석"}</p>
+        </div>
+        <em className={isTyping ? "" : "complete"}>{isTyping ? "응답 생성 중" : "판단 완료"}</em>
+      </div>
+
+      <div className="agent-answer-insight-row">
+        <span><BookOpen size={14} /> 기준서 {response.sources.length}건</span>
+        <span><Gauge size={14} /> 유사 이력 {similarCount}건</span>
+        <span><ShieldCheck size={14} /> RAG 기반</span>
       </div>
 
       <section className="agent-answer-summary">
-        <strong>요약 답변</strong>
-        <p>{response.answer}</p>
+        <strong>핵심 판단</strong>
+        <p>
+          {typedAnswer}
+          {isTyping ? <span className="agent-type-cursor" /> : null}
+        </p>
       </section>
 
       <div className="agent-answer-grid">
-        <section>
-          <strong>권장 조치 순서</strong>
+        <section className="agent-reveal-section" style={{ animationDelay: "120ms" }}>
+          <strong>권장 조치</strong>
           <ol className="agent-step-list">
             {response.checklist.map((item, index) => (
-              <li key={item.id}>
+              <li key={item.id} style={{ animationDelay: `${220 + index * 90}ms` }}>
                 <span>{index + 1}</span>
                 <p>{item.label}</p>
                 <em className={item.priority}>{priorityLabel(item.priority)}</em>
@@ -423,50 +488,124 @@ function AgentStructuredAnswer({ response, inspection }: { response: AskAgentRes
           </ol>
         </section>
 
-        <section>
-          <strong>재검사 기준</strong>
+        <section className="agent-reveal-section" style={{ animationDelay: "260ms" }}>
+          <strong>재검사 체크리스트</strong>
           <ul className="agent-bullet-list">
             {reinspectionItems.map((item) => <li key={item}>{item}</li>)}
           </ul>
         </section>
 
-        <section>
+        <section className="agent-reveal-section" style={{ animationDelay: "380ms" }}>
           <strong>작업자 전달용 안내문</strong>
           <p className="agent-worker-note">{workerMessage}</p>
         </section>
       </div>
 
-      <section className="agent-rag-section">
-        <strong>RAG 참조 근거</strong>
-        {response.sources.length === 0 ? (
-          <div className="empty">표시할 참조 근거가 없습니다.</div>
+      <section className="agent-next-actions">
+        <strong>다음 작업</strong>
+        <div className="agent-action-grid">
+          {inspection ? (
+            <Link className="agent-action-card" href={`/inspections/${inspection.id}`}>
+              <span><ExternalLink size={17} /></span>
+              <strong>검사 상세 확인</strong>
+              <p>원본 이미지와 판정 이력을 다시 확인</p>
+              <em>열기 <ArrowRight size={13} /></em>
+            </Link>
+          ) : null}
+          <button className="agent-action-card" type="button">
+            <span><ClipboardList size={17} /></span>
+            <strong>조치 체크리스트 생성</strong>
+            <p>권장 조치를 실행 항목으로 전환</p>
+            <em>생성 <ArrowRight size={13} /></em>
+          </button>
+          <Link className="agent-action-card" href="/reports">
+            <span><FileCheck2 size={17} /></span>
+            <strong>보고서 반영</strong>
+            <p>이번 검사 요약을 품질 리포트에 추가</p>
+            <em>반영 <ArrowRight size={13} /></em>
+          </Link>
+          <button className="agent-action-card" type="button">
+            <span><MessageSquareText size={17} /></span>
+            <strong>작업자 안내문 저장</strong>
+            <p>현장 전달용 문구를 조치 기록에 보관</p>
+            <em>저장 <ArrowRight size={13} /></em>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AgentEvidencePanel({
+  response
+}: {
+  response: Pick<AskAgentResponse, "sources" | "similarCases"> | null;
+}) {
+  const sources = response?.sources ?? [];
+  const similarCases = response?.similarCases ?? [];
+
+  return (
+    <aside className="agent-evidence-card">
+      <div className="agent-panel-head">
+        <h2><Activity size={18} /> 근거 및 유사 이력</h2>
+        <p>Agent 답변에 사용된 기준서와 과거 조치 사례입니다.</p>
+      </div>
+
+      <section className="agent-evidence-section">
+        <div className="agent-evidence-title">
+          <strong>RAG 참조 근거</strong>
+          <span>{sources.length}개 문서</span>
+        </div>
+        {sources.length === 0 ? (
+          <div className="empty">질문 후 참조 문서가 표시됩니다.</div>
         ) : (
-          <div className="agent-rag-grid">
-            {response.sources.map((source, index) => (
-              <article key={source.id ?? `${source.title}-${index}`}>
-                <FileText size={16} />
+          <div className="agent-evidence-list">
+            {sources.slice(0, 4).map((source, index) => (
+              <article className="agent-evidence-source" key={source.id ?? `${source.title}-${index}`}>
+                <FileText size={17} />
                 <div>
+                  <div className="agent-evidence-meta">
+                    <span>{documentTypeLabel(source.title)}</span>
+                    <em>#{index + 1}</em>
+                  </div>
                   <strong>{source.title}</strong>
                   <p>{source.excerpt}</p>
-                  <Link href="/admin/manuals">문서 보기 <ExternalLink size={12} /></Link>
+                  <div className="agent-score-bar"><span style={{ width: `${Math.max(6, Math.min(100, source.score * 100))}%` }} /></div>
                 </div>
-                <span>유사도 {source.score.toFixed(2)}</span>
+                <em className="agent-score-value">유사도 {source.score.toFixed(2)}</em>
               </article>
             ))}
           </div>
         )}
       </section>
 
-      <section className="agent-next-actions">
-        <strong>다음 작업</strong>
-        <div>
-          {inspection ? <Link href={`/inspections/${inspection.id}`}><ExternalLink size={15} /> 검사 상세로 이동</Link> : null}
-          <button type="button"><ClipboardList size={15} /> 조치 체크리스트 생성</button>
-          <Link href="/reports"><FileText size={15} /> 리포트에 반영</Link>
-          <button type="button"><FileText size={15} /> 작업자 안내문 저장</button>
+      <section className="agent-evidence-section">
+        <div className="agent-evidence-title">
+          <strong>유사 조치 이력</strong>
+          <span>{similarCases.length}건</span>
         </div>
+        {similarCases.length === 0 ? (
+          <div className="empty">질문 후 유사 이력이 표시됩니다.</div>
+        ) : (
+          <div className="agent-evidence-list">
+            {similarCases.slice(0, 3).map((item) => (
+              <article className="agent-evidence-case" key={item.inspectionId}>
+                <div>
+                  <strong>{item.inspectionId}</strong>
+                  <span>{item.equipmentName} · {item.processName}</span>
+                </div>
+                <p>{item.actionTaken ?? item.note ?? "조치 기록 확인 필요"}</p>
+                <footer>
+                  {item.defectType ? <span>{item.defectType}</span> : null}
+                  <span>유사도 {item.score.toFixed(2)}</span>
+                  <span>{reasonLabel(item.reasons[0])}</span>
+                </footer>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
-    </div>
+    </aside>
   );
 }
 
@@ -531,10 +670,64 @@ function priorityLabel(priority: string) {
   }[priority] ?? priority;
 }
 
+function reasonLabel(reason?: string) {
+  return {
+    same_defect_type: "동일 불량",
+    same_equipment: "동일 설비",
+    same_process: "동일 공정",
+    similar_lot: "유사 LOT",
+    has_action_history: "조치 이력",
+    has_reinspection_result: "재검사 이력",
+    closed_case: "종결 사례"
+  }[reason ?? ""] ?? "유사 조건";
+}
+
+function documentTypeLabel(title: string) {
+  if (/SOP|기준|기준서/.test(title)) {
+    return "기준서";
+  }
+  if (/가이드|Guide|guide/.test(title)) {
+    return "가이드";
+  }
+  if (/보고|리포트|report/i.test(title)) {
+    return "보고서";
+  }
+  return "문서";
+}
+
+function useTypewriter(text: string, intervalMs: number) {
+  const [visibleText, setVisibleText] = useState(intervalMs > 0 ? "" : text);
+
+  useEffect(() => {
+    if (intervalMs <= 0) {
+      setVisibleText(text);
+      return;
+    }
+
+    setVisibleText("");
+    let nextLength = 0;
+    const timer = window.setInterval(() => {
+      nextLength += 2;
+      setVisibleText(text.slice(0, nextLength));
+      if (nextLength >= text.length) {
+        window.clearInterval(timer);
+      }
+    }, intervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [text, intervalMs]);
+
+  return visibleText;
+}
+
 function formatTime(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false
   }).format(new Date(value));
+}
+
+function formatDateTime(value: string) {
+  return value.slice(0, 16).replace("T", " ");
 }

@@ -69,6 +69,23 @@ GEMINI_VISION_MODEL=gemini-2.5-flash
 
 Gemini 호출이 실패하면 검사 요청은 실패시키지 않고 로컬 판정으로 fallback합니다.
 
+## Agent 답변 생성
+
+RAG 검색은 매뉴얼 chunk를 기준으로 수행하고, 최종 답변은 Gemini가 생성할 수 있습니다.
+Gemini 호출이 실패하거나 키가 없으면 기존 로컬 RAG 템플릿 답변으로 fallback합니다.
+
+```env
+AGENT_ANSWER_DRIVER=gemini
+GEMINI_API_KEY=...
+GEMINI_AGENT_MODEL=gemini-3-flash-preview
+```
+
+로컬 템플릿만 사용할 때는 아래처럼 설정합니다.
+
+```env
+AGENT_ANSWER_DRIVER=local
+```
+
 ## RAG 매뉴얼 업로드
 
 텍스트/마크다운 매뉴얼을 업로드하면 백엔드가 본문을 chunk로 나누고 embedding을 생성해 저장합니다.

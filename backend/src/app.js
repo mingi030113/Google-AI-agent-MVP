@@ -33,14 +33,14 @@ export async function createApp({ dataDir, env = process.env, visionClient } = {
 
   return createServer(async (request, response) => {
     try {
-      await routeRequest({ request, response, store, visionClient: vision });
+      await routeRequest({ request, response, store, visionClient: vision, env });
     } catch (error) {
       sendError(response, error);
     }
   });
 }
 
-async function routeRequest({ request, response, store, visionClient }) {
+async function routeRequest({ request, response, store, visionClient, env }) {
   if (request.method === "OPTIONS") {
     sendNoContent(response);
     return;
@@ -130,7 +130,7 @@ async function routeRequest({ request, response, store, visionClient }) {
     if (!body.question || body.question.trim().length === 0) {
       throw badRequest("question is required.");
     }
-    sendJson(response, 200, await answerAgentQuestion(body, store));
+    sendJson(response, 200, await answerAgentQuestion(body, store, { env }));
     return;
   }
 
@@ -140,7 +140,7 @@ async function routeRequest({ request, response, store, visionClient }) {
       return;
     }
     if (request.method === "POST") {
-      const report = generateReport(await readJson(request), await store.listInspections());
+      const report = await generateReport(await readJson(request), await store.listInspections(), { env, store });
       await store.addReport(report);
       sendJson(response, 201, { report });
       return;

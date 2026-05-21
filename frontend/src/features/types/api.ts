@@ -56,6 +56,22 @@ export interface AgentGuidance {
   answer: string;
   checklist: Array<{ id: string; label: string; priority: "low" | "medium" | "high"; checked?: boolean }>;
   sources: Array<{ id?: string; title: string; excerpt: string; score: number; manualId?: string; chunkIndex?: number }>;
+  similarCases?: SimilarInspectionCase[];
+}
+
+export interface SimilarInspectionCase {
+  inspectionId: string;
+  lotNo: string;
+  processName: string;
+  equipmentName: string;
+  defectType: string | null;
+  status: InspectionStatus;
+  inspectedAt: string;
+  actionTaken?: string;
+  reinspectionResult?: InspectionResult;
+  note?: string;
+  score: number;
+  reasons: string[];
 }
 
 export interface InspectionListResponse {
@@ -122,7 +138,22 @@ export interface QualityReport {
   riskProcesses: string[];
   recommendedActions: string[];
   metrics: DashboardMetricsResponse;
+  analysis?: QualityReportAnalysis;
+  reportDriver?: string;
   createdAt: string;
+}
+
+export interface QualityReportAnalysis {
+  executiveSummary: string;
+  keyFindings: string[];
+  anomalySignals: Array<{ title: string; severity: RiskLevel; evidence: string }>;
+  defectAnalysis: Array<{ defectType: string; count: number; rate: number; interpretation: string }>;
+  processAnalysis: Array<{ processName: string; defectRate: number; riskLevel: RiskLevel; reason: string }>;
+  rootCauseHypotheses: string[];
+  recommendedActionItems: Array<{ priority: RiskLevel; action: string; reason: string }>;
+  ragEvidence: Array<{ title: string; excerpt: string; score: number }>;
+  similarCases: Array<{ inspectionId: string; outcome: string; similarity: number }>;
+  managerCommentary: string;
 }
 
 export interface Manual {

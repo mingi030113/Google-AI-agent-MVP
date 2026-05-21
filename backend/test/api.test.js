@@ -5,6 +5,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/app.js";
 import { ingestManual } from "../src/rag/manual-ingestion-service.js";
+import { embedText } from "../src/rag/embedding.js";
 import { SupabaseRepository } from "../src/repositories/supabase-repository.js";
 
 describe("quality agent backend API", () => {
@@ -14,7 +15,14 @@ describe("quality agent backend API", () => {
 
   before(async () => {
     dataDir = await mkdtemp(join(tmpdir(), "quality-agent-backend-"));
-    server = await createApp({ dataDir });
+    server = await createApp({
+      dataDir,
+      env: {
+        STORE_DRIVER: "json",
+        VISION_DRIVER: "local",
+        AGENT_ANSWER_DRIVER: "local"
+      }
+    });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     baseUrl = `http://127.0.0.1:${address.port}`;
@@ -82,6 +90,23 @@ describe("quality agent backend API", () => {
     });
     assert.equal(answer.fallback, false);
     assert.ok(answer.sources.length > 0);
+    assert.ok(answer.similarCases.length > 0);
+    assert.equal(answer.similarCases[0].defectType, "scratch");
+
+    const reinspectionAnswer = await jsonFetch(`${baseUrl}/api/agent/ask`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "scratch 재검사 기준 알려줘", defectType: "scratch" })
+    });
+    const workerMessageAnswer = await jsonFetch(`${baseUrl}/api/agent/ask`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "scratch 작업자 안내 문구 작성", defectType: "scratch" })
+    });
+    assert.notEqual(answer.answer, reinspectionAnswer.answer);
+    assert.notEqual(reinspectionAnswer.answer, workerMessageAnswer.answer);
+    assert.match(reinspectionAnswer.answer, /재검사|동일 LOT/);
+    assert.match(workerMessageAnswer.answer, /작업자 전달 문구/);
 
     const report = await jsonFetch(`${baseUrl}/api/reports`, {
       method: "POST",
@@ -93,6 +118,11 @@ describe("quality agent backend API", () => {
       })
     });
     assert.match(report.report.title, /품질 리포트/);
+    assert.ok(report.report.analysis.executiveSummary.length > 20);
+    assert.ok(report.report.analysis.keyFindings.length >= 3);
+    assert.ok(report.report.analysis.anomalySignals.length >= 1);
+    assert.ok(report.report.analysis.recommendedActionItems.length >= 1);
+    assert.ok(report.report.summary.includes("검사"));
 
     const deleteResponse = await fetch(`${baseUrl}/api/reports/${report.report.id}`, {
       method: "DELETE"
@@ -185,6 +215,48 @@ describe("supabase repository fallback behavior", () => {
     });
 
     assert.deepEqual(chunks, []);
+  });
+
+  it("computes real scores when pgvector RPC fallback uses manual chunk embeddings", async () => {
+    const repository = new SupabaseRepository({
+      url: "https://example.supabase.co",
+      serviceRoleKey: "test-key"
+    });
+    const scratchEmbedding = embedText("scratch 지그 접촉면 마모 이송 레일 청소");
+    const crackEmbedding = embedText("crack 냉각 시간 가압 조건 균열");
+    repository.request = async (path) => {
+      if (path.includes("/rpc/match_manual_chunks")) {
+        throw new Error("simulated RPC failure");
+      }
+      if (path.includes("metadata->>defectType=eq.scratch")) {
+        return [{
+          id: "00000000-0000-0000-0000-000000000001",
+          manual_id: "manual-scratch",
+          chunk_index: 0,
+          content: "스크래치 불량은 지그 접촉면 마모와 이송 레일 오염을 우선 확인한다.",
+          metadata: { title: "스크래치 기준서", defectType: "scratch" },
+          embedding: `[${scratchEmbedding.join(",")}]`
+        }, {
+          id: "00000000-0000-0000-0000-000000000002",
+          manual_id: "manual-crack",
+          chunk_index: 0,
+          content: "균열은 냉각 시간과 가압 조건을 확인한다.",
+          metadata: { title: "균열 기준서", defectType: "crack" },
+          embedding: `[${crackEmbedding.join(",")}]`
+        }];
+      }
+      return [];
+    };
+
+    const chunks = await repository.searchManualChunks({
+      embedding: scratchEmbedding,
+      defectType: "scratch",
+      limit: 2
+    });
+
+    assert.equal(chunks[0].manualId, "manual-scratch");
+    assert.notEqual(chunks[0].score, 0.5);
+    assert.equal(chunks.some((chunk) => chunk.manualId === "manual-crack"), false);
   });
 });
 

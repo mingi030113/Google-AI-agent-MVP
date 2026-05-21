@@ -13,9 +13,24 @@ import {
   Gauge,
   Home,
   RefreshCcw,
-  ShieldCheck
+  ShieldCheck,
+  TrendingUp,
+  Wrench
 } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import { AppShell } from "@/components/layout/AppShell";
 import { client } from "@/features/api/client";
 import type { DashboardMetricsResponse, RiskLevel } from "@/features/types/api";
@@ -61,6 +76,14 @@ export default function DashboardPage() {
       rank: index + 1
     }));
   }, [metrics]);
+  const topTrendPoint = useMemo(
+    () => metrics?.trend.reduce((top, item) => item.defective > top.defective ? item : top, metrics.trend[0]) ?? null,
+    [metrics]
+  );
+  const topRiskEquipment = useMemo(
+    () => equipmentRows.filter((item) => item.riskLevel !== "low").slice(0, 3),
+    [equipmentRows]
+  );
 
   return (
     <AppShell>
@@ -90,6 +113,22 @@ export default function DashboardPage() {
         <div className="empty">지표를 불러오는 중입니다.</div>
       ) : (
         <>
+          <section className={`dashboard-status-hero ${overallRisk(metrics)}`}>
+            <div>
+              <span><Gauge size={16} /> 현재 품질 상태</span>
+              <h2>{qualityStatusLabel(overallRisk(metrics))}</h2>
+              <p>
+                불량률 {metrics.summary.defectRate}% · 조치 대기 {metrics.summary.actionRequiredCount ?? 0}건 ·
+                고위험 설비 {metrics.summary.highRiskEquipmentCount}대 기준으로 산정했습니다.
+              </p>
+            </div>
+            <div className="dashboard-status-metrics">
+              <span><strong>{metrics.summary.defectRate}%</strong><small>기간 불량률</small></span>
+              <span><strong>{metrics.summary.topDefectType ?? "-"}</strong><small>최다 불량 유형</small></span>
+              <span><strong>{topTrendPoint ? topTrendPoint.date.slice(5) : "-"}</strong><small>피크 발생일</small></span>
+            </div>
+          </section>
+
           <section className="dashboard-kpis">
             <KpiCard icon={CheckSquare} label="오늘 검사" value={`${metrics.summary.todayInspections ?? metrics.summary.totalInspections}건`} delta={metrics.summary.inspectionDelta ?? 0} help="오늘 누적 검사 수" tone="teal" />
             <KpiCard icon={AlertTriangle} label="불량 감지" value={`${metrics.summary.todayDefectiveCount ?? metrics.summary.defectiveCount}건`} delta={metrics.summary.defectiveDelta ?? 0} help="오늘 누적 불량 수" tone="red" />
@@ -105,15 +144,28 @@ export default function DashboardPage() {
                   <h2>일자별 불량 추이</h2>
                   <p>최근 7일 불량 수 추이입니다.</p>
                 </div>
-                <span className="dashboard-chip red">최근 24시간 불량 증가</span>
+                <span className={`dashboard-chip ${metrics.summary.defectRateDelta && metrics.summary.defectRateDelta > 0 ? "red" : "green"}`}>
+                  {metrics.summary.defectRateDelta && metrics.summary.defectRateDelta > 0 ? "최근 불량률 상승" : "최근 불량률 안정"}
+                </span>
+              </div>
+              <div className="dashboard-chart-stats">
+                <span><TrendingUp size={14} /> 피크 {topTrendPoint?.defective ?? 0}건</span>
+                <span>평균 {averageDefective(metrics.trend)}건</span>
               </div>
               <ResponsiveContainer width="100%" height={245}>
                 <LineChart data={metrics.trend}>
+                  <defs>
+                    <linearGradient id="defectLine" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#0d8b8f" />
+                      <stop offset="100%" stopColor="#ef4444" />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e7edf2" />
                   <XAxis dataKey="date" tickFormatter={(value) => value.slice(5)} />
                   <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="defective" stroke="#ef4444" strokeWidth={3} dot={{ r: 3 }} name="불량 수" />
+                  <Tooltip content={<DashboardTooltip />} />
+                  <ReferenceLine y={averageDefective(metrics.trend)} stroke="#f0ad29" strokeDasharray="5 5" />
+                  <Line type="monotone" dataKey="defective" stroke="url(#defectLine)" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 7 }} name="불량 수" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -130,8 +182,14 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e7edf2" vertical={false} />
                   <XAxis dataKey="processName" />
                   <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="defectRate" fill="#087d83" radius={[6, 6, 0, 0]} name="불량률" />
+                  <Tooltip content={<DashboardTooltip />} />
+                  <ReferenceLine y={15} stroke="#ef4444" strokeDasharray="5 5" />
+                  <Bar dataKey="defectRate" radius={[6, 6, 0, 0]} name="불량률">
+                    {processChart.map((entry) => (
+                      <Cell key={entry.processId} fill={riskColor(entry.riskLevel)} />
+                    ))}
+                    <LabelList dataKey="defectRate" position="top" formatter={(value: number) => `${value}%`} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -151,6 +209,22 @@ export default function DashboardPage() {
               </div>
               <Link className="dashboard-more" href="/inspections">모든 불량 유형 보기 <ChevronRight size={15} /></Link>
             </div>
+          </section>
+
+          <section className="dashboard-priority-grid">
+            <div className="dashboard-priority-head">
+              <span><Wrench size={16} /> 우선 점검 대상</span>
+              <strong>{topRiskEquipment.length ? `${topRiskEquipment.length}대 설비 확인 필요` : "즉시 점검 대상 없음"}</strong>
+              <p>고위험/주의 설비를 먼저 확인한 뒤 전체 설비 위험도 표에서 상세 수치를 검토합니다.</p>
+            </div>
+            {(topRiskEquipment.length ? topRiskEquipment : equipmentRows.slice(0, 3)).map((item) => (
+              <article className={`dashboard-priority-card ${item.riskLevel}`} key={item.equipmentId}>
+                <span>{riskLabels[item.riskLevel]}</span>
+                <strong>{item.equipmentName}</strong>
+                <p>{item.processName} · 불량률 {item.defectRate}% · 불량 {item.defective}/{item.total}건</p>
+                <em>{recommendedAction(item.riskLevel)}</em>
+              </article>
+            ))}
           </section>
 
           <section className="panel dashboard-risk-table-card">
@@ -196,6 +270,21 @@ export default function DashboardPage() {
   );
 }
 
+function DashboardTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name?: string; value?: number | string }>; label?: string }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  return (
+    <div className="dashboard-tooltip">
+      <strong>{label}</strong>
+      {payload.map((item) => (
+        <span key={item.name}>{item.name}: {item.value}{item.name?.includes("불량률") ? "%" : ""}</span>
+      ))}
+    </div>
+  );
+}
+
 function KpiCard({
   icon: Icon,
   label,
@@ -234,6 +323,43 @@ function recommendedAction(risk: RiskLevel) {
     return "추이 관찰";
   }
   return "정상";
+}
+
+function overallRisk(metrics: DashboardMetricsResponse): RiskLevel {
+  if (metrics.summary.highRiskEquipmentCount > 0 || metrics.summary.defectRate >= 15 || (metrics.summary.actionRequiredCount ?? 0) >= 5) {
+    return "high";
+  }
+  if (metrics.summary.highRiskProcessCount > 0 || metrics.summary.defectRate >= 8 || (metrics.summary.actionRequiredCount ?? 0) > 0) {
+    return "medium";
+  }
+  return "low";
+}
+
+function qualityStatusLabel(risk: RiskLevel) {
+  if (risk === "high") {
+    return "즉시 점검 필요";
+  }
+  if (risk === "medium") {
+    return "주의 관찰";
+  }
+  return "안정";
+}
+
+function riskColor(risk: RiskLevel) {
+  if (risk === "high") {
+    return "#ef4444";
+  }
+  if (risk === "medium") {
+    return "#f0ad29";
+  }
+  return "#0d8b8f";
+}
+
+function averageDefective(trend: DashboardMetricsResponse["trend"]) {
+  if (trend.length === 0) {
+    return 0;
+  }
+  return Math.round((trend.reduce((sum, item) => sum + item.defective, 0) / trend.length) * 10) / 10;
 }
 
 function formatUpdate(date?: string) {

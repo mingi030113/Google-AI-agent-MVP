@@ -2,19 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, Bot, ClipboardList, Factory, FileText, History, LogOut, Settings, Upload } from "lucide-react";
+import { BarChart3, Bot, ChevronDown, ClipboardList, Factory, FileText, History, LogOut, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { canAccess, clearSession, defaultRouteFor, readSession, roleLabels } from "@/features/auth/session";
 import type { AppUser } from "@/features/auth/session";
 
 const nav = [
-  { href: "/inspections/new", label: "AI 검사", icon: Upload },
+  { href: "/dashboard", label: "대시보드", icon: BarChart3 },
   { href: "/inspections", label: "검사 이력", icon: History },
-  { href: "/dashboard", label: "품질 대시보드", icon: BarChart3 },
+  { href: "/inspections/new", label: "검사 등록", icon: Upload },
   { href: "/agent", label: "조치 Agent", icon: Bot },
-  { href: "/reports", label: "리포트", icon: FileText },
-  { href: "/admin/manuals", label: "지식베이스", icon: ClipboardList }
+  { href: "/reports", label: "보고서", icon: FileText },
+  { href: "/admin/manuals", label: "매뉴얼 관리", icon: ClipboardList }
 ];
 
 const pageTitles: Record<string, string> = {
@@ -93,9 +93,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span>검사, 조치 기준, 리포트를 한 흐름에서 관리합니다.</span>
           </div>
           <div className="topbar-actions">
-            <span className="badge">
-              <Settings size={14} /> {user.displayName} · {roleLabels[user.role]}
-            </span>
+            <button className="topbar-user" type="button" aria-label="사용자 메뉴">
+              <span className="topbar-user-avatar">{user.displayName.slice(0, 1)}</span>
+              <span>
+                <strong>{user.displayName}</strong>
+                <small>{roleLabels[user.role]}</small>
+              </span>
+              <ChevronDown size={16} />
+            </button>
             <button className="button secondary" onClick={logout} type="button">
               <LogOut size={16} /> 로그아웃
             </button>

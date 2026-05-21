@@ -70,6 +70,11 @@ export class JsonStore {
     return [...this.db.inspections];
   }
 
+  async searchInspectionHistory(criteria) {
+    const { findSimilarInspectionCases } = await import("../similar-case-service.js");
+    return findSimilarInspectionCases(this.db.inspections, criteria);
+  }
+
   async getInspection(id) {
     return this.db.inspections.find((inspection) => inspection.id === id) ?? null;
   }

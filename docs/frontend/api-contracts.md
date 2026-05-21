@@ -248,9 +248,30 @@ export interface AskAgentResponse {
     excerpt: string;
     score: number;
   }>;
+  similarCases: Array<{
+    inspectionId: string;
+    lotNo: string;
+    processName: string;
+    equipmentName: string;
+    defectType: string | null;
+    status: InspectionStatus;
+    inspectedAt: string;
+    actionTaken?: string;
+    reinspectionResult?: InspectionResult;
+    note?: string;
+    score: number;
+    reasons: string[];
+  }>;
   fallback: boolean;
 }
 ```
+
+답변 생성:
+
+- 매뉴얼 chunk 검색 결과와 검사 컨텍스트를 기반으로 답변한다.
+- `AGENT_ANSWER_DRIVER=gemini`이면 Gemini가 최종 `answer`와 `checklist`를 생성한다.
+- Gemini 호출 실패 또는 키 미설정 시 백엔드는 로컬 RAG 템플릿으로 fallback한다.
+- `similarCases`는 같은 불량/설비/공정/조치 이력 기준으로 랭킹한 과거 검사 사례다.
 
 ## `POST /api/reports`
 
