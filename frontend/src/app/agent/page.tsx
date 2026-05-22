@@ -35,6 +35,8 @@ const quickQuestionTemplates = [
   { key: "similar", label: "유사 사례 찾아줘" }
 ];
 
+const agentHandoffKey = "quality-agent-inspection-handoff";
+
 type AgentChatEntry = {
   id: string;
   question: string;
@@ -62,12 +64,13 @@ export default function AgentPage() {
       setError("");
       try {
         const explicitId = new URLSearchParams(window.location.search).get("inspectionId");
+        const handoffInspection = explicitId ? readAgentHandoff(explicitId) : null;
         const list = await client.inspections({ page: "1", pageSize: "8" });
-        setInspectionOptions(list.items);
+        setInspectionOptions(mergeInspectionOption(list.items, handoffInspection));
 
         if (explicitId) {
           setSelectedInspectionId(explicitId);
-          await loadInspectionContext(explicitId);
+          await loadInspectionContext(explicitId, handoffInspection);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "검사 이력을 불러오지 못했습니다.");
@@ -130,7 +133,7 @@ export default function AgentPage() {
     }
   }
 
-  async function loadInspectionContext(inspectionId = selectedInspectionId) {
+  async function loadInspectionContext(inspectionId = selectedInspectionId, fallbackInspection?: InspectionDetail | null) {
     if (!inspectionId) {
       return;
     }
@@ -140,10 +143,21 @@ export default function AgentPage() {
     try {
       const detail = await client.inspection(inspectionId);
       setInspection(detail.inspection);
+      setInspectionOptions((items) => mergeInspectionOption(items, detail.inspection));
       setAnswer(null);
       setChatHistory([]);
       setQuestion("");
     } catch (err) {
+      const handoffInspection = fallbackInspection ?? readAgentHandoff(inspectionId);
+      if (handoffInspection) {
+        setInspection(handoffInspection);
+        setInspectionOptions((items) => mergeInspectionOption(items, handoffInspection));
+        setAnswer(null);
+        setChatHistory([]);
+        setQuestion("");
+        setError("");
+        return;
+      }
       setError(err instanceof Error ? err.message : "검사 컨텍스트를 불러오지 못했습니다.");
     } finally {
       setContextLoading(false);
@@ -305,6 +319,38 @@ export default function AgentPage() {
       </div>
     </AppShell>
   );
+}
+
+function readAgentHandoff(inspectionId: string) {
+  try {
+    const raw = window.sessionStorage.getItem(agentHandoffKey);
+    if (!raw) {
+      return null;
+    }
+    const inspection = JSON.parse(raw) as InspectionDetail;
+    return inspection.id === inspectionId ? inspection : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeInspectionOption(items: InspectionListItem[], inspection: InspectionDetail | null) {
+  if (!inspection || items.some((item) => item.id === inspection.id)) {
+    return items;
+  }
+
+  return [{
+    id: inspection.id,
+    imageUrl: inspection.imageUrl,
+    processName: inspection.processName,
+    equipmentName: inspection.equipmentName,
+    lotNo: inspection.lotNo,
+    result: inspection.result,
+    defectType: inspection.defectType,
+    confidence: inspection.confidence,
+    status: inspection.status,
+    inspectedAt: inspection.inspectedAt
+  }, ...items];
 }
 
 function Capability({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {

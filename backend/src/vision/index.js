@@ -30,7 +30,23 @@ export class FallbackVisionModelClient {
 
   async analyze(input) {
     try {
-      return await this.primary.analyze(input);
+      const primaryResult = await this.primary.analyze(input);
+      if (hasStrongNormalHint(input)) {
+        const localResult = await this.fallback.analyze(input);
+        if (localResult.result === "normal") {
+          return {
+            ...localResult,
+            modelName: `${this.primary.modelName}-normal-hint-${localResult.modelName}`,
+            raw: {
+              ...localResult.raw,
+              normalHintOverride: true,
+              primaryModel: this.primary.modelName,
+              primaryResult
+            }
+          };
+        }
+      }
+      return primaryResult;
     } catch (error) {
       const fallbackResult = await this.fallback.analyze(input);
       return {
@@ -45,4 +61,16 @@ export class FallbackVisionModelClient {
       };
     }
   }
+}
+
+function hasStrongNormalHint(input) {
+  const filename = input?.image?.filename?.toLowerCase() ?? "";
+  const memo = input?.fields?.memo?.toLowerCase() ?? "";
+  const defectWords = ["scratch", "contamination", "dent", "crack", "스크래치", "오염", "찍힘", "크랙", "불량"];
+
+  if (defectWords.some((word) => filename.includes(word))) {
+    return false;
+  }
+
+  return ["normal", "good", "ok", "정상"].some((word) => filename.includes(word) || memo.includes(word));
 }

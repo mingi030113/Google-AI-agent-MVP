@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import {
@@ -54,10 +54,12 @@ const priorityLabels: Record<string, string> = {
 
 export default function InspectionDetailPage() {
   const params = useParams<{ inspectionId: string }>();
+  const router = useRouter();
   const [inspection, setInspection] = useState<InspectionDetail | null>(null);
   const [feedback, setFeedback] = useState<FeedbackForm>(emptyFeedback);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
   const [reportMessage, setReportMessage] = useState("");
 
   useEffect(() => {
@@ -96,12 +98,15 @@ export default function InspectionDetailPage() {
     }
     setReportMessage("");
     setError("");
+    setReportLoading(true);
     try {
       const date = inspection.inspectedAt.slice(0, 10);
-      const result = await client.createReport({ reportType: "daily", startDate: date, endDate: date });
-      setReportMessage(`${result.report.title} 생성 완료`);
+      await client.createReport({ reportType: "daily", startDate: date, endDate: date });
+      router.push("/reports");
     } catch (err) {
       setError(err instanceof Error ? err.message : "리포트 생성에 실패했습니다.");
+    } finally {
+      setReportLoading(false);
     }
   }
 
@@ -134,8 +139,8 @@ export default function InspectionDetailPage() {
           <Link className="button secondary" href="/inspections">
             <ArrowLeft size={16} /> 목록으로
           </Link>
-          <button className="button" type="button" onClick={createReport}>
-            <FileText size={16} /> 리포트 생성
+          <button className="button" disabled={reportLoading} type="button" onClick={createReport}>
+            <FileText size={16} /> {reportLoading ? "리포트 생성 중" : "리포트 생성"}
           </button>
         </div>
       </div>

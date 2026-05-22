@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { createRepository } from "./repositories/index.js";
+import { createBackendContainer } from "./infrastructure/container.js";
 import { parseMultipart } from "./multipart.js";
 import {
   badRequest,
@@ -14,26 +14,31 @@ import {
   sendNoContent
 } from "./http.js";
 import {
-  analyzeInspection,
-  applyFeedback,
-  filterInspections,
-  paginate,
-  summarizeInspections,
-  toListItem
-} from "./inspection-service.js";
-import { buildDashboardMetrics } from "./dashboard-service.js";
-import { answerAgentQuestion } from "./agent-service.js";
-import { generateReport } from "./report-service.js";
-import { createVisionModelClient } from "./vision/index.js";
-import { ingestManual } from "./rag/manual-ingestion-service.js";
+  analyzeInspectionUseCase,
+  applyInspectionFeedbackUseCase,
+  getInspectionUseCase,
+  listInspectionsUseCase
+} from "./application/use-cases/inspection-use-cases.js";
+import { getDashboardMetricsUseCase } from "./application/use-cases/dashboard-use-cases.js";
+import { askAgentQuestionUseCase } from "./application/use-cases/agent-use-cases.js";
+import {
+  createReportUseCase,
+  deleteReportUseCase,
+  getReportUseCase,
+  listReportsUseCase
+} from "./application/use-cases/report-use-cases.js";
+import {
+  deleteManualUseCase,
+  ingestManualUseCase,
+  listManualsUseCase
+} from "./application/use-cases/manual-use-cases.js";
 
 export async function createApp({ dataDir, env = process.env, visionClient } = {}) {
-  const store = await createRepository({ dataDir, env });
-  const vision = visionClient ?? createVisionModelClient({ env });
+  const container = await createBackendContainer({ dataDir, env, visionClient });
 
   return createServer(async (request, response) => {
     try {
-      await routeRequest({ request, response, store, visionClient: vision, env });
+      await routeRequest({ request, response, ...container, env });
     } catch (error) {
       sendError(response, error);
     }
@@ -82,13 +87,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
     if (request.method !== "GET") {
       throw methodNotAllowed();
     }
-    const inspections = await store.listInspections();
-    const filtered = filterInspections(inspections, query)
-      .sort((left, right) => right.inspectedAt.localeCompare(left.inspectedAt));
-    sendJson(response, 200, {
-      ...paginate(filtered.map(toListItem), query),
-      summary: summarizeInspections(filtered)
-    });
+    sendJson(response, 200, await listInspectionsUseCase({ store, query }));
     return;
   }
 
@@ -106,7 +105,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
     if (request.method !== "GET") {
       throw methodNotAllowed();
     }
-    const inspection = await store.getInspection(inspectionMatch[1]);
+    const inspection = await getInspectionUseCase({ store, inspectionId: inspectionMatch[1] });
     if (!inspection) {
       throw notFound("Inspection was not found.");
     }
@@ -118,7 +117,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
     if (request.method !== "GET") {
       throw methodNotAllowed();
     }
-    sendJson(response, 200, buildDashboardMetrics(await store.listInspections(), query));
+    sendJson(response, 200, await getDashboardMetricsUseCase({ store, query }));
     return;
   }
 
@@ -126,22 +125,17 @@ async function routeRequest({ request, response, store, visionClient, env }) {
     if (request.method !== "POST") {
       throw methodNotAllowed();
     }
-    const body = await readJson(request);
-    if (!body.question || body.question.trim().length === 0) {
-      throw badRequest("question is required.");
-    }
-    sendJson(response, 200, await answerAgentQuestion(body, store, { env }));
+    sendJson(response, 200, await askAgentQuestionUseCase({ store, env, payload: await readJson(request) }));
     return;
   }
 
   if (pathname === "/api/reports") {
     if (request.method === "GET") {
-      sendJson(response, 200, { items: await store.listReports() });
+      sendJson(response, 200, { items: await listReportsUseCase({ store }) });
       return;
     }
     if (request.method === "POST") {
-      const report = await generateReport(await readJson(request), await store.listInspections(), { env, store });
-      await store.addReport(report);
+      const report = await createReportUseCase({ store, env, payload: await readJson(request) });
       sendJson(response, 201, { report });
       return;
     }
@@ -151,7 +145,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
   const reportMatch = pathname.match(/^\/api\/reports\/([^/]+)$/);
   if (reportMatch) {
     if (request.method === "GET") {
-      const report = await store.getReport(reportMatch[1]);
+      const report = await getReportUseCase({ store, reportId: reportMatch[1] });
       if (!report) {
         throw notFound("Report was not found.");
       }
@@ -159,13 +153,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
       return;
     }
     if (request.method === "DELETE") {
-      if (!store.deleteReport) {
-        throw methodNotAllowed("Report delete is not supported by the active store.");
-      }
-      const deleted = await store.deleteReport(reportMatch[1]);
-      if (!deleted) {
-        throw notFound("Report was not found.");
-      }
+      await deleteReportUseCase({ store, reportId: reportMatch[1] });
       sendNoContent(response);
       return;
     }
@@ -177,10 +165,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
     if (request.method !== "DELETE") {
       throw methodNotAllowed();
     }
-    if (!store.deleteManual) {
-      throw methodNotAllowed("Manual delete is not supported by the active store.");
-    }
-    const deleted = await store.deleteManual(manualMatch[1]);
+    const deleted = await deleteManualUseCase({ store, manualId: manualMatch[1] });
     if (!deleted) {
       throw notFound("Manual was not found.");
     }
@@ -190,7 +175,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
 
   if (pathname === "/api/manuals") {
     if (request.method === "GET") {
-      sendJson(response, 200, { items: await store.listManuals() });
+      sendJson(response, 200, { items: await listManualsUseCase({ store }) });
       return;
     }
     if (request.method === "POST") {
@@ -209,14 +194,10 @@ async function handleManualUpload(request, response, store) {
     throw badRequest("Content-Type must be multipart/form-data.");
   }
 
-  if (!store.upsertManualWithChunks) {
-    throw methodNotAllowed("Manual upload is not supported by the active store.");
-  }
-
   const body = await readBody(request);
   const { fields, files } = parseMultipart(body, contentType);
   const file = files.file || files.manual;
-  const result = await ingestManual({ fields, file, store });
+  const result = await ingestManualUseCase({ fields, file, store });
   sendJson(response, 201, result);
 }
 
@@ -240,20 +221,14 @@ async function handleAnalyzeInspection(request, response, store, visionClient) {
     contentType: image.contentType
   });
 
-  const inspection = await analyzeInspection({
-    fields,
-    imageUrl,
-    image,
-    visionClient
-  });
-  await store.addInspection(inspection);
+  const inspection = await analyzeInspectionUseCase({ store, fields, imageUrl, image, visionClient });
 
   sendJson(response, 201, { inspection });
 }
 
 async function handleFeedback(request, response, store, inspectionId) {
   const feedback = await readJson(request);
-  const inspection = await store.updateInspection(inspectionId, (current) => applyFeedback(current, feedback));
+  const inspection = await applyInspectionFeedbackUseCase({ store, inspectionId, feedback });
   if (!inspection) {
     throw notFound("Inspection was not found.");
   }

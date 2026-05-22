@@ -9,7 +9,6 @@ import {
   CheckSquare,
   ChevronRight,
   ClipboardCheck,
-  FileSearch,
   Gauge,
   Home,
   RefreshCcw,
@@ -18,13 +17,9 @@ import {
   Wrench
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
-  Cell,
-  LabelList,
-  Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -48,6 +43,8 @@ const riskLabels: Record<RiskLevel, string> = {
   low: "낮음"
 };
 
+const defectPalette = ["#ff5f4d", "#f0ad29", "#0d8b8f", "#7a8796", "#8c7fb8"];
+
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetricsResponse | null>(null);
   const [error, setError] = useState("");
@@ -64,6 +61,10 @@ export default function DashboardPage() {
     () => metrics?.equipmentMetrics.filter((item) => item.total > 0).sort((left, right) => right.defectRate - left.defectRate) ?? [],
     [metrics]
   );
+  const trendChart = useMemo(
+    () => metrics?.trend.map((item) => ({ ...item, label: item.date.slice(5), total: item.normal + item.defective })) ?? [],
+    [metrics]
+  );
   const defectRows = useMemo(() => {
     if (!metrics) {
       return [];
@@ -73,7 +74,8 @@ export default function DashboardPage() {
       ...item,
       label: defectLabels[item.defectType] ?? item.defectType,
       percent: Math.round((item.count / total) * 1000) / 10,
-      rank: index + 1
+      rank: index + 1,
+      color: defectPalette[index % defectPalette.length]
     }));
   }, [metrics]);
   const topTrendPoint = useMemo(
@@ -138,71 +140,125 @@ export default function DashboardPage() {
           </section>
 
           <section className="dashboard-main-grid">
-            <div className="panel dashboard-chart-card">
+            <div className="panel dashboard-chart-card dashboard-trend-card">
               <div className="dashboard-panel-head">
                 <div>
                   <h2>일자별 불량 추이</h2>
-                  <p>최근 7일 불량 수 추이입니다.</p>
+                  <p>최근 7일 검사 흐름에서 정상/불량 변화를 함께 봅니다.</p>
                 </div>
                 <span className={`dashboard-chip ${metrics.summary.defectRateDelta && metrics.summary.defectRateDelta > 0 ? "red" : "green"}`}>
                   {metrics.summary.defectRateDelta && metrics.summary.defectRateDelta > 0 ? "최근 불량률 상승" : "최근 불량률 안정"}
                 </span>
               </div>
               <div className="dashboard-chart-stats">
-                <span><TrendingUp size={14} /> 피크 {topTrendPoint?.defective ?? 0}건</span>
-                <span>평균 {averageDefective(metrics.trend)}건</span>
+                <span><TrendingUp size={14} /> 불량 피크 {topTrendPoint?.defective ?? 0}건</span>
+                <span>일평균 불량 {averageDefective(metrics.trend)}건</span>
+                <span>누적 검사 {metrics.summary.totalInspections}건</span>
               </div>
-              <ResponsiveContainer width="100%" height={245}>
-                <LineChart data={metrics.trend}>
+              <ResponsiveContainer width="100%" height={286}>
+                <AreaChart data={trendChart} margin={{ top: 16, right: 10, left: -18, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="defectLine" x1="0" y1="0" x2="1" y2="0">
+                    <linearGradient id="defectAreaStroke" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#0d8b8f" />
-                      <stop offset="100%" stopColor="#ef4444" />
+                      <stop offset="100%" stopColor="#b86a61" />
+                    </linearGradient>
+                    <linearGradient id="defectAreaFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#b86a61" stopOpacity={0.3} />
+                      <stop offset="58%" stopColor="#b86a61" stopOpacity={0.1} />
+                      <stop offset="100%" stopColor="#ffffff" stopOpacity={0.02} />
+                    </linearGradient>
+                    <linearGradient id="normalAreaFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#0d8b8f" stopOpacity={0.18} />
+                      <stop offset="58%" stopColor="#0d8b8f" stopOpacity={0.07} />
+                      <stop offset="100%" stopColor="#ffffff" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e7edf2" />
-                  <XAxis dataKey="date" tickFormatter={(value) => value.slice(5)} />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="4 8" stroke="#e7edf2" vertical={false} />
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#7a8796", fontSize: 11 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#7a8796", fontSize: 11 }} width={34} />
                   <Tooltip content={<DashboardTooltip />} />
                   <ReferenceLine y={averageDefective(metrics.trend)} stroke="#f0ad29" strokeDasharray="5 5" />
-                  <Line type="monotone" dataKey="defective" stroke="url(#defectLine)" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 7 }} name="불량 수" />
-                </LineChart>
+                  <Area
+                    type="monotone"
+                    dataKey="normal"
+                    stroke="#0d8b8f"
+                    fill="url(#normalAreaFill)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 5, strokeWidth: 2, fill: "#ffffff" }}
+                    name="정상"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="defective"
+                    stroke="url(#defectAreaStroke)"
+                    fill="url(#defectAreaFill)"
+                    strokeWidth={3}
+                    dot={{ r: 4, strokeWidth: 2, fill: "#ffffff" }}
+                    activeDot={{ r: 7, strokeWidth: 2, fill: "#ffffff" }}
+                    name="불량"
+                  />
+                </AreaChart>
               </ResponsiveContainer>
+              <div className="dashboard-chart-legend" aria-label="차트 범례">
+                <span><i className="normal" /> 정상</span>
+                <span><i className="defective" /> 불량</span>
+                <span><i className="average" /> 불량 평균선</span>
+              </div>
             </div>
 
             <div className="panel dashboard-chart-card">
               <div className="dashboard-panel-head">
                 <div>
                   <h2>공정별 불량률</h2>
-                  <p>공정별 불량률 비교입니다.</p>
+                  <p>위험 기준 15%를 넘는 공정을 우선순위로 정렬했습니다.</p>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={245}>
-                <BarChart data={processChart}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e7edf2" vertical={false} />
-                  <XAxis dataKey="processName" />
-                  <YAxis />
-                  <Tooltip content={<DashboardTooltip />} />
-                  <ReferenceLine y={15} stroke="#ef4444" strokeDasharray="5 5" />
-                  <Bar dataKey="defectRate" radius={[6, 6, 0, 0]} name="불량률">
-                    {processChart.map((entry) => (
-                      <Cell key={entry.processId} fill={riskColor(entry.riskLevel)} />
-                    ))}
-                    <LabelList dataKey="defectRate" position="top" formatter={(value: number) => `${value}%`} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="dashboard-rank-chart">
+                <div className="dashboard-rank-threshold">
+                  <span style={{ left: "15%" }} />
+                  <em>위험 기준 15%</em>
+                </div>
+                {processChart.map((item, index) => (
+                  <article className={`dashboard-rank-row ${item.riskLevel} rank-${index + 1}`} key={item.processId}>
+                    <div className="dashboard-rank-row-head">
+                      <span><b>{String(index + 1).padStart(2, "0")}</b>{item.processName}</span>
+                      <strong>{item.defectRate}%</strong>
+                    </div>
+                    <div className="dashboard-rank-track">
+                      <i style={{ width: `${Math.min(item.defectRate, 100)}%`, background: riskColor(item.riskLevel) }} />
+                    </div>
+                    <div className="dashboard-rank-row-foot">
+                      <span>불량 {item.defective}/{item.total}건</span>
+                      <em>{riskLabels[item.riskLevel]}</em>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
 
             <div className="panel dashboard-defect-card">
               <h2>주요 불량 유형</h2>
               <p>전체 불량 대비 유형별 비율입니다.</p>
+              {defectRows.length ? (
+                <div className="dashboard-defect-visual">
+                  <div className="dashboard-defect-lead" style={{ "--defect-color": defectRows[0]?.color } as React.CSSProperties}>
+                    <span>최다 발생</span>
+                    <strong>{metrics.summary.topDefectType ?? "-"}</strong>
+                    <em>{defectRows[0]?.percent ?? 0}%</em>
+                  </div>
+                  <div>
+                    <strong>{metrics.summary.defectiveCount}건</strong>
+                    <span>전체 불량 중 최다 유형 비중을 기준으로 정렬했습니다.</span>
+                  </div>
+                </div>
+              ) : null}
               <div className="dashboard-defect-list">
                 {defectRows.length ? defectRows.map((item) => (
                   <div className="dashboard-defect-item" key={item.defectType}>
-                    <span>{item.rank}</span>
+                    <span style={{ background: item.color, color: "#ffffff" }}>{item.rank}</span>
                     <strong>{item.label}</strong>
-                    <div><i style={{ width: `${item.percent}%` }} /></div>
+                    <div><i style={{ width: `${item.percent}%`, background: item.color }} /></div>
                     <em>{item.percent}%</em>
                   </div>
                 )) : <div className="empty">불량 유형 데이터가 없습니다.</div>}
@@ -340,19 +396,13 @@ function qualityStatusLabel(risk: RiskLevel) {
     return "즉시 점검 필요";
   }
   if (risk === "medium") {
-    return "주의 관찰";
+    return "주의 관찰 필요";
   }
-  return "안정";
+  return "품질 상태 안정";
 }
 
-function riskColor(risk: RiskLevel) {
-  if (risk === "high") {
-    return "#ef4444";
-  }
-  if (risk === "medium") {
-    return "#f0ad29";
-  }
-  return "#0d8b8f";
+function riskColor(_risk: RiskLevel) {
+  return "#d97870";
 }
 
 function averageDefective(trend: DashboardMetricsResponse["trend"]) {

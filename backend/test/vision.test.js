@@ -45,4 +45,37 @@ describe("vision model clients", () => {
     assert.equal(inspection.modelName, "gemini:test-fallback-local-vision-heuristic-v1");
     assert.equal(inspection.visionAnalysis.fallback, true);
   });
+
+  it("keeps demo normal images normal even when the primary model is over-sensitive", async () => {
+    const client = new FallbackVisionModelClient({
+      primary: {
+        modelName: "gemini:test",
+        analyze: async () => ({
+          result: "defective",
+          defectType: "dent",
+          confidence: 0.85,
+          modelName: "gemini:test",
+          raw: { defectScores: { dent: 0.9, scratch: 0.3, contamination: 0.1, crack: 0 } }
+        })
+      },
+      fallback: new LocalVisionModelClient()
+    });
+
+    const inspection = await analyzeInspection({
+      fields: {
+        processId: "process-a",
+        equipmentId: "eq-a-1",
+        lotNo: "LOT-TEST-normal",
+        memo: ""
+      },
+      imageUrl: "/uploads/normal-metal-nut-good.png",
+      image: { filename: "normal-metal-nut-good.png", contentType: "image/png", buffer: Buffer.from("fake normal image bytes") },
+      visionClient: client
+    });
+
+    assert.equal(inspection.result, "normal");
+    assert.equal(inspection.defectType, null);
+    assert.equal(inspection.status, "pending");
+    assert.equal(inspection.visionAnalysis.normalHintOverride, true);
+  });
 });

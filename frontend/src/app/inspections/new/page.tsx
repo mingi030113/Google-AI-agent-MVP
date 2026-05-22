@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
+  Activity,
   AlertTriangle,
   CheckSquare,
-  ChevronRight,
+  Cpu,
   FileImage,
   FileSearch,
   FileText,
   ImageIcon,
   LocateFixed,
+  ScanLine,
   Send,
   ShieldCheck,
   Sparkles,
@@ -44,7 +47,10 @@ const reasonLabels: Record<string, string> = {
   dent: "압입 흔적"
 };
 
+const agentHandoffKey = "quality-agent-inspection-handoff";
+
 export default function NewInspectionPage() {
+  const router = useRouter();
   const [master, setMaster] = useState<MasterData | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
@@ -75,6 +81,11 @@ export default function NewInspectionPage() {
   const decision = inspection ? (inspection.result === "defective" ? "불량 감지" : "정상") : "-";
   const risk = inspection ? (inspection.result === "defective" ? "High" : "Low") : "-";
   const defectScores = buildDefectScores(inspection);
+  const selectedProcess = master?.processes.find((item) => item.id === form.processId);
+  const selectedEquipment = master?.equipment.find((item) => item.id === form.equipmentId);
+  const requestReady = Boolean(image && form.processId && form.equipmentId && form.lotNo);
+  const hasDefect = inspection?.result === "defective";
+  const DecisionIcon = inspection?.result === "defective" ? AlertTriangle : ShieldCheck;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -106,26 +117,50 @@ export default function NewInspectionPage() {
     }
   }
 
+  function sendToAgent() {
+    if (!inspection) {
+      return;
+    }
+
+    window.sessionStorage.setItem(agentHandoffKey, JSON.stringify(inspection));
+    router.push(`/agent?inspectionId=${encodeURIComponent(inspection.id)}`);
+  }
+
   return (
     <AppShell>
       <header className="inspection-title">
-        <h1>AI 품질 검사</h1>
-        <p>Vision AI가 불량을 판정하고, RAG Agent가 표준서 기반 조치 가이드를 제공합니다.</p>
+        <div>
+          <span className="inspection-title-kicker"><Cpu size={15} /> Vision · RAG 검사 콘솔</span>
+          <h1>AI 품질 검사</h1>
+          <p>Vision AI가 불량을 판정하고, RAG Agent가 표준서 기반 조치 가이드를 제공합니다.</p>
+        </div>
+        <div className="inspection-title-status">
+          <span><strong>{selectedProcess?.name ?? "-"}</strong><small>공정</small></span>
+          <span><strong>{selectedEquipment?.name ?? "-"}</strong><small>설비</small></span>
+          <span className={requestReady ? "ready" : ""}><strong>{requestReady ? "Ready" : "Standby"}</strong><small>검사 상태</small></span>
+        </div>
       </header>
 
       <div className="inspection-workspace">
         <form className="panel inspection-request-card" onSubmit={submit}>
           <div className="inspection-card-head">
-            <h2>검사 요청</h2>
+            <div>
+              <span><Activity size={15} /> 검사 요청</span>
+              <h2>이미지 및 생산 정보</h2>
+            </div>
             <button className="button secondary" type="button" onClick={() => setForm((current) => ({ ...current, lotNo: "LOT-20260518-001", memo: "scratch 의심" }))}>
               <FileImage size={16} /> 샘플 이미지 사용
             </button>
           </div>
 
-          <label className="inspection-dropzone">
-            <UploadCloud size={42} />
-            <strong>검사 이미지를 드래그하거나 클릭하여 업로드</strong>
-            <span>PNG, JPG, WEBP 지원 · 최대 10MB</span>
+          <label className={`inspection-dropzone ${preview ? "has-image" : ""}`}>
+            {preview ? <img src={preview} alt="" aria-hidden="true" /> : null}
+            <div className="inspection-dropzone-copy">
+              <UploadCloud size={42} />
+              <strong>{image ? image.name : "검사 이미지를 드래그하거나 클릭하여 업로드"}</strong>
+              <span>{image ? "이미지 선택 완료 · 분석 실행 가능" : "PNG, JPG, WEBP 지원 · 최대 10MB"}</span>
+              <em>{image ? "Replace image" : "Select image"}</em>
+            </div>
             <input type="file" accept="image/*" onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
               setImage(file);
@@ -135,11 +170,26 @@ export default function NewInspectionPage() {
             }} />
           </label>
 
-          <div className="inspection-image-row">
-            <PreviewBox title="원본 이미지" src={preview} emptyText="이미지 업로드 시 원본이 표시됩니다." />
-            <ChevronRight size={22} className="inspection-arrow" />
-            <PreviewBox title="AI 검출 결과" src={preview} detected={Boolean(inspection)} emptyText="분석 실행 시 검출 결과가 표시됩니다." />
-          </div>
+          <section className="inspection-vision-panel">
+            <div className="inspection-vision-head">
+              <span><ScanLine size={15} /> Vision Workspace</span>
+              <strong>{inspection ? hasDefect ? "결함 영역 표시 완료" : "결함 없음 확인" : image ? "분석 대기 중" : "이미지 입력 대기"}</strong>
+            </div>
+            <div className="inspection-image-row">
+              <PreviewBox title="원본 이미지" src={preview} emptyText="이미지 업로드 시 원본이 표시됩니다." />
+              <div className="inspection-arrow">
+                <ScanLine size={18} />
+                <span>AI Scan</span>
+              </div>
+              <PreviewBox
+                title="AI 검출 결과"
+                src={preview}
+                detected={hasDefect}
+                status={inspection ? hasDefect ? "Defect marked" : "No defect" : undefined}
+                emptyText="분석 실행 시 검출 결과가 표시됩니다."
+              />
+            </div>
+          </section>
 
           <div className="grid two">
             <div className="field">
@@ -179,8 +229,14 @@ export default function NewInspectionPage() {
 
         <section className="inspection-result-stack">
           <div className="panel inspection-stage-card">
-            <h2>{inspection ? "AI 분석 결과" : "AI 분석 대기 중"}</h2>
-            <p>이미지를 업로드하고 검사 정보를 입력하면 Vision AI 판정과 RAG 기반 조치 가이드가 생성됩니다.</p>
+            <div className="inspection-stage-head">
+              <div>
+                <span><Sparkles size={15} /> AI Pipeline</span>
+                <h2>{inspection ? "AI 분석 결과" : loading ? "AI 분석 진행 중" : "AI 분석 대기 중"}</h2>
+                <p>이미지를 업로드하고 검사 정보를 입력하면 Vision AI 판정과 RAG 기반 조치 가이드가 생성됩니다.</p>
+              </div>
+              <strong className={loading ? "active" : inspection ? "complete" : ""}>{loading ? "Running" : inspection ? "Complete" : "Idle"}</strong>
+            </div>
             <div className="inspection-stage-line">
               {stages.map((item, index) => {
                 const Icon = item.icon;
@@ -200,7 +256,7 @@ export default function NewInspectionPage() {
               <div className="inspection-decision-grid">
                 <div className="inspection-final-decision">
                   <span>최종 판정</span>
-                  <strong><AlertTriangle size={22} /> {decision}</strong>
+                  <strong><DecisionIcon size={22} /> {decision}</strong>
                 </div>
                 <ResultMetric label="불량 유형" value={defectName} />
                 <ResultMetric label="신뢰도" value={confidence} />
@@ -214,35 +270,51 @@ export default function NewInspectionPage() {
               </div>
             </div>
           ) : (
-            <div className="panel inspection-summary-card">
-              <h2>분석 결과 미리보기</h2>
+            <div className="panel inspection-summary-card inspection-readiness-card">
+              <div className="inspection-readiness-head">
+                <span><ShieldCheck size={16} /> 검사 준비 상태</span>
+                <strong>{requestReady ? "분석 실행 가능" : "입력값 확인 필요"}</strong>
+              </div>
               <div className="inspection-summary-grid">
-                <SummaryItem icon={ShieldCheck} label="최종 판정" value={decision} />
-                <SummaryItem icon={LocateFixed} label="불량 유형" value={defectName} />
-                <SummaryItem icon={Sparkles} label="신뢰도" value={confidence} />
-                <SummaryItem icon={ShieldCheck} label="위험도" value={risk} />
+                <SummaryItem icon={FileImage} label="이미지" value={image ? "선택됨" : "대기"} active={Boolean(image)} />
+                <SummaryItem icon={LocateFixed} label="공정" value={selectedProcess?.name ?? "-"} active={Boolean(form.processId)} />
+                <SummaryItem icon={ShieldCheck} label="설비" value={selectedEquipment?.name ?? "-"} active={Boolean(form.equipmentId)} />
+                <SummaryItem icon={Sparkles} label="Agent" value={requestReady ? "준비됨" : "대기"} active={requestReady} />
               </div>
             </div>
           )}
 
           {inspection ? (
             <div className="inspection-analysis-grid">
-              <div className="panel inspection-defect-card">
-                <h2>검출 불량</h2>
-                <div className="inspection-defect-list">
-                  {defectScores.map((item) => (
-                    <div className="inspection-defect-row" key={item.type}>
-                      <span>{item.label}</span>
-                      <div><i style={{ width: `${item.percent}%` }} /></div>
-                      <strong>{item.percent}%</strong>
-                    </div>
-                  ))}
+              {hasDefect ? (
+                <div className="panel inspection-defect-card">
+                  <h2>결함 유형 신뢰도</h2>
+                  <div className="inspection-defect-list">
+                    {defectScores.map((item) => (
+                      <div className="inspection-defect-row" key={item.type}>
+                        <span>{item.label}</span>
+                        <div><i style={{ width: `${item.percent}%` }} /></div>
+                        <strong>{item.percent}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <h3>예상 원인</h3>
+                  <div className="inspection-cause-tags">
+                    {defectScores.slice(0, 3).map((item) => <span key={item.type}>{reasonLabels[item.type] ?? item.label}</span>)}
+                  </div>
                 </div>
-                <h3>예상 원인</h3>
-                <div className="inspection-cause-tags">
-                  {defectScores.slice(0, 3).map((item) => <span key={item.type}>{reasonLabels[item.type] ?? item.label}</span>)}
+              ) : (
+                <div className="panel inspection-clear-card">
+                  <ShieldCheck size={28} />
+                  <h2>검출 불량 없음</h2>
+                  <p>Vision AI 분석 결과 결함 영역이 확인되지 않았습니다. LOT와 설비 정보만 기록하고 필요 시 조치 가이드에서 표준 확인 절차를 검토하세요.</p>
+                  <div>
+                    <span>Normal</span>
+                    <strong>{confidence}</strong>
+                    <em>판정 신뢰도</em>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="panel inspection-guide-card result">
                 <h2>RAG Agent 조치 가이드</h2>
                 {inspection.agentGuidance ? <GuidePreview guidance={inspection.agentGuidance} withPriority /> : <GuideSkeleton />}
@@ -278,10 +350,7 @@ export default function NewInspectionPage() {
 
           {inspection ? (
             <div className="inspection-action-row">
-              <button className="button secondary" type="button">
-                <FileText size={17} /> 리포트 생성
-              </button>
-              <button className="button" type="button">
+              <button className="button" onClick={sendToAgent} type="button">
                 <Send size={17} /> 조치 Agent로 전달
               </button>
             </div>
@@ -292,15 +361,18 @@ export default function NewInspectionPage() {
   );
 }
 
-function PreviewBox({ title, src, detected, emptyText }: { title: string; src: string; detected?: boolean; emptyText: string }) {
+function PreviewBox({ title, src, detected, status, emptyText }: { title: string; src: string; detected?: boolean; status?: string; emptyText: string }) {
   return (
     <div className="inspection-preview-box">
-      <strong>{title}</strong>
+      <div className="inspection-preview-title">
+        <strong>{title}</strong>
+        <span>{status ?? (detected ? "Defect marked" : src ? "Image loaded" : "Waiting")}</span>
+      </div>
       <div className={`inspection-preview-image ${detected ? "detected" : ""}`}>
         {src ? (
           <>
             <img src={src} alt={title} />
-            {detected ? <i /> : null}
+            {detected ? <><i /><em>AI DETECTED</em></> : null}
           </>
         ) : (
           <span>
@@ -313,9 +385,9 @@ function PreviewBox({ title, src, detected, emptyText }: { title: string; src: s
   );
 }
 
-function SummaryItem({ icon: Icon, label, value }: { icon: typeof ShieldCheck; label: string; value: string }) {
+function SummaryItem({ icon: Icon, label, value, active = false }: { icon: typeof ShieldCheck; label: string; value: string; active?: boolean }) {
   return (
-    <div className="inspection-summary-item">
+    <div className={`inspection-summary-item ${active ? "active" : ""}`}>
       <Icon size={19} />
       <span>{label}</span>
       <strong>{value}</strong>
@@ -389,7 +461,7 @@ function stageClass(current: StageKey, target: StageKey) {
 }
 
 function buildDefectScores(inspection: InspectionDetail | null) {
-  if (!inspection) {
+  if (!inspection || inspection.result !== "defective") {
     return [];
   }
 
