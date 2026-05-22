@@ -84,7 +84,7 @@ function buildInspection({ sequence, date, result, defectType, defectOrdinal }) 
     defectType,
     confidence: result === "normal" ? 0.91 : 0.86,
     modelName: "local-vision-heuristic-v1",
-    status: result === "defective" ? "action_required" : sequence % 4 === 0 ? "reviewed" : "pending",
+    status: result === "defective" ? "action_required" : "closed",
     inspectedAt,
     agentGuidance: manual
       ? {

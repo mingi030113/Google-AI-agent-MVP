@@ -19,6 +19,10 @@ export interface InspectionListItem {
   confidence: number;
   status: InspectionStatus;
   inspectedAt: string;
+  checklistProgress?: {
+    completed: number;
+    total: number;
+  };
 }
 
 export interface InspectionDetail extends InspectionListItem {

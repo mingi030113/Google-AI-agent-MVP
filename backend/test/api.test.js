@@ -40,7 +40,7 @@ describe("quality agent backend API", () => {
     assert.deepEqual(inspections.summary, {
       total: 128,
       actionRequired: 17,
-      pendingReview: 82,
+      pendingReview: 0,
       averageConfidence: 90.3
     });
 
@@ -70,6 +70,30 @@ describe("quality agent backend API", () => {
     assert.equal(analyzed.inspection.result, "defective");
     assert.equal(analyzed.inspection.defectType, "scratch");
 
+    const checklistItemIds = analyzed.inspection.agentGuidance.checklist.map((item) => item.id);
+    const firstChecklistUpdate = await jsonFetch(`${baseUrl}/api/inspections/${analyzed.inspection.id}/checklist`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        itemId: checklistItemIds[0],
+        checked: true
+      })
+    });
+    assert.equal(firstChecklistUpdate.inspection.agentGuidance.checklist[0].checked, true);
+    assert.equal(firstChecklistUpdate.inspection.status, "action_required");
+
+    for (const itemId of checklistItemIds.slice(1)) {
+      await jsonFetch(`${baseUrl}/api/inspections/${analyzed.inspection.id}/checklist`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ itemId, checked: true })
+      });
+    }
+
+    const listed = await jsonFetch(`${baseUrl}/api/inspections?page=1&pageSize=1&q=LOT-TEST-scratch`);
+    assert.deepEqual(listed.items[0].checklistProgress, { completed: 3, total: 3 });
+    assert.equal(listed.items[0].status, "reviewed");
+
     const feedback = await jsonFetch(`${baseUrl}/api/inspections/${analyzed.inspection.id}/feedback`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -80,6 +104,14 @@ describe("quality agent backend API", () => {
     });
 
     assert.equal(feedback.inspection.status, "closed");
+    assert.ok(feedback.inspection.feedback.id);
+
+    const deletedFeedback = await jsonFetch(`${baseUrl}/api/inspections/${analyzed.inspection.id}/feedback/${feedback.inspection.feedback.id}`, {
+      method: "DELETE"
+    });
+
+    assert.equal(deletedFeedback.inspection.feedbackHistory.length, 0);
+    assert.equal(deletedFeedback.inspection.feedback, undefined);
   });
 
   it("answers agent questions and generates reports", async () => {
@@ -107,6 +139,28 @@ describe("quality agent backend API", () => {
     assert.notEqual(reinspectionAnswer.answer, workerMessageAnswer.answer);
     assert.match(reinspectionAnswer.answer, /재검사|동일 LOT/);
     assert.match(workerMessageAnswer.answer, /작업자 전달 문구/);
+
+    const invalidDailyReport = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reportType: "daily",
+        startDate: "2026-05-12",
+        endDate: "2026-05-18"
+      })
+    });
+    assert.equal(invalidDailyReport.status, 400);
+
+    const invalidWeeklyReport = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reportType: "weekly",
+        startDate: "2026-05-01",
+        endDate: "2026-05-18"
+      })
+    });
+    assert.equal(invalidWeeklyReport.status, 400);
 
     const report = await jsonFetch(`${baseUrl}/api/reports`, {
       method: "POST",

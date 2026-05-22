@@ -10,7 +10,8 @@ import {
   FileText,
   Image as ImageIcon,
   Save,
-  ShieldAlert
+  ShieldAlert,
+  Trash2
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { client, uploadBase } from "@/features/api/client";
@@ -59,6 +60,8 @@ export default function InspectionDetailPage() {
   const [feedback, setFeedback] = useState<FeedbackForm>(emptyFeedback);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingFeedbackId, setDeletingFeedbackId] = useState("");
+  const [savingChecklistId, setSavingChecklistId] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
   const [reportMessage, setReportMessage] = useState("");
 
@@ -110,6 +113,32 @@ export default function InspectionDetailPage() {
     }
   }
 
+  async function deleteFeedback(feedbackId: string) {
+    setDeletingFeedbackId(feedbackId);
+    setError("");
+    try {
+      const result = await client.deleteFeedback(params.inspectionId, feedbackId);
+      setInspection(result.inspection);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "조치 이력 삭제에 실패했습니다.");
+    } finally {
+      setDeletingFeedbackId("");
+    }
+  }
+
+  async function toggleChecklistItem(itemId: string, checked: boolean) {
+    setSavingChecklistId(itemId);
+    setError("");
+    try {
+      const result = await client.updateChecklistItem(params.inspectionId, { itemId, checked });
+      setInspection(result.inspection);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "체크리스트 저장에 실패했습니다.");
+    } finally {
+      setSavingChecklistId("");
+    }
+  }
+
   if (!inspection) {
     return (
       <AppShell>
@@ -122,6 +151,7 @@ export default function InspectionDetailPage() {
   const feedbackHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
   const sources = inspection.agentGuidance?.sources ?? [];
   const checklist = inspection.agentGuidance?.checklist ?? [];
+  const checklistProgress = progressFor(checklist);
 
   return (
     <AppShell>
@@ -176,7 +206,6 @@ export default function InspectionDetailPage() {
             </div>
 
             <div className="detail-meta-line">
-              <span>모델: {inspection.modelName}</span>
               <span>분석 ID: {inspection.id}</span>
               <span>작업자: {inspection.operatorName}</span>
             </div>
@@ -237,9 +266,6 @@ export default function InspectionDetailPage() {
             </label>
 
             <div className="detail-form-actions">
-              <button className="button secondary" type="button" onClick={() => setFeedback(emptyFeedback)}>
-                임시 저장
-              </button>
               <button className="button" disabled={saving || !feedback.actionTaken.trim()}>
                 <Save size={16} /> {saving ? "저장 중" : "피드백 저장"}
               </button>
@@ -252,7 +278,7 @@ export default function InspectionDetailPage() {
             <div className="detail-card-head">
               <div>
                 <h2>RAG Agent 조치 체크리스트</h2>
-                <p>기준서 기반 Agent 제안</p>
+                <p>기준서 기반 Agent 제안 · {checklistProgress.completed}/{checklistProgress.total} 완료</p>
               </div>
               <span className={`detail-risk-chip ${risk.tone}`}>
                 <ShieldAlert size={14} /> 우선순위: {risk.label}
@@ -262,10 +288,19 @@ export default function InspectionDetailPage() {
             {inspection.agentGuidance ? (
               <>
                 <p className="detail-agent-answer">{inspection.agentGuidance.answer}</p>
+                <div className="detail-checklist-progress" aria-label="체크리스트 진행률">
+                  <span style={{ width: `${checklistProgress.percent}%` }} />
+                </div>
                 <ul className="detail-checklist">
                   {checklist.map((item) => (
                     <li key={item.id}>
-                      <input type="checkbox" readOnly checked={Boolean(item.checked)} aria-label={item.label} />
+                      <input
+                        type="checkbox"
+                        checked={Boolean(item.checked)}
+                        disabled={savingChecklistId === item.id}
+                        onChange={(event) => toggleChecklistItem(item.id, event.target.checked)}
+                        aria-label={item.label}
+                      />
                       <span>{item.label}</span>
                       <em className={item.priority}>{priorityLabels[item.priority]}</em>
                     </li>
@@ -308,7 +343,12 @@ export default function InspectionDetailPage() {
             ) : (
               <div className="detail-history-list">
                 {feedbackHistory.map((item, index) => (
-                  <FeedbackHistoryItem item={item} key={item.id ?? `${item.createdAt}-${index}`} />
+                  <FeedbackHistoryItem
+                    deleting={deletingFeedbackId === feedbackKey(item)}
+                    item={item}
+                    key={item.id ?? `${item.createdAt}-${index}`}
+                    onDelete={() => deleteFeedback(feedbackKey(item))}
+                  />
                 ))}
               </div>
             )}
@@ -321,7 +361,7 @@ export default function InspectionDetailPage() {
 
 function SummaryBox({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "red" | "green" | "amber" | "neutral" }) {
   return (
-    <div className="detail-summary-box">
+    <div className={`detail-summary-box ${tone}`}>
       <span>{label}</span>
       <strong className={tone}>{value}</strong>
     </div>
@@ -344,7 +384,15 @@ function InspectionImage({ title, src, marker }: { title: string; src: string; m
   );
 }
 
-function FeedbackHistoryItem({ item }: { item: InspectionFeedback }) {
+function FeedbackHistoryItem({
+  deleting,
+  item,
+  onDelete
+}: {
+  deleting: boolean;
+  item: InspectionFeedback;
+  onDelete: () => void;
+}) {
   return (
     <article className="detail-history-item">
       <CheckCircle2 size={16} />
@@ -357,8 +405,25 @@ function FeedbackHistoryItem({ item }: { item: InspectionFeedback }) {
         </span>
         {item.note ? <small>{item.note}</small> : null}
       </div>
+      <button className="detail-history-delete" disabled={deleting} onClick={onDelete} type="button">
+        <Trash2 size={13} /> {deleting ? "삭제 중" : "삭제"}
+      </button>
     </article>
   );
+}
+
+function feedbackKey(item: InspectionFeedback) {
+  return item.id ?? item.createdAt;
+}
+
+function progressFor(checklist: Array<{ checked?: boolean }>) {
+  const total = checklist.length;
+  const completed = checklist.filter((item) => item.checked).length;
+  return {
+    completed,
+    total,
+    percent: total === 0 ? 0 : Math.round((completed / total) * 100)
+  };
 }
 
 function riskFor(inspection: InspectionDetail): { label: string; tone: "red" | "amber" | "green" } {

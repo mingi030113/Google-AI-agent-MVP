@@ -33,6 +33,8 @@ backend/server.err.log
 # Generated artifacts
 docs/frontend.zip
 reports/*.docx
+screenshots/
+frontend/tsconfig.tsbuildinfo
 
 # OS/editor
 .DS_Store

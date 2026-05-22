@@ -19,7 +19,13 @@ import {
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Cell,
+  LabelList,
+  Pie,
+  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -43,7 +49,7 @@ const riskLabels: Record<RiskLevel, string> = {
   low: "낮음"
 };
 
-const defectPalette = ["#ff5f4d", "#f0ad29", "#0d8b8f", "#7a8796", "#8c7fb8"];
+const defectPalette = ["#bd6b61", "#0d8b8f", "#f0ad29", "#6589a9", "#8c7fb8"];
 
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetricsResponse | null>(null);
@@ -54,7 +60,7 @@ export default function DashboardPage() {
   }, []);
 
   const processChart = useMemo(
-    () => metrics?.processMetrics.filter((item) => item.total > 0).sort((left, right) => right.defectRate - left.defectRate).slice(0, 4) ?? [],
+    () => metrics?.processMetrics.filter((item) => item.total > 0).sort((left, right) => right.defectRate - left.defectRate).slice(0, 3) ?? [],
     [metrics]
   );
   const equipmentRows = useMemo(
@@ -104,9 +110,9 @@ export default function DashboardPage() {
           <p>최근 검사 데이터를 기반으로 불량률과 고위험 설비를 확인합니다.</p>
         </div>
         <div className="dashboard-quick-nav">
-          <Link href="/inspections/new"><Gauge size={21} /><span><strong>Vision 검사</strong><small>이미지 기반 검사 실행</small></span></Link>
-          <Link href="/agent"><Bot size={21} /><span><strong>RAG Agent</strong><small>불량 유형 검색</small></span></Link>
-          <Link href="/inspections"><ClipboardCheck size={21} /><span><strong>조치 이력</strong><small>작업 및 피드백 조회</small></span></Link>
+          <Link href="/inspections/new"><Gauge size={21} /><span><strong>AI검사</strong><small>신규 품질 검사 실행</small></span></Link>
+          <Link href="/agent"><Bot size={21} /><span><strong>조치 Agent</strong><small>불량 원인과 조치 확인</small></span></Link>
+          <Link href="/inspections"><ClipboardCheck size={21} /><span><strong>검사 이력</strong><small>판정 결과와 진행 상태 조회</small></span></Link>
         </div>
       </header>
 
@@ -155,16 +161,16 @@ export default function DashboardPage() {
                 <span>일평균 불량 {averageDefective(metrics.trend)}건</span>
                 <span>누적 검사 {metrics.summary.totalInspections}건</span>
               </div>
-              <ResponsiveContainer width="100%" height={286}>
+              <ResponsiveContainer width="100%" height={236}>
                 <AreaChart data={trendChart} margin={{ top: 16, right: 10, left: -18, bottom: 0 }}>
                   <defs>
                     <linearGradient id="defectAreaStroke" x1="0" y1="0" x2="1" y2="0">
                       <stop offset="0%" stopColor="#0d8b8f" />
-                      <stop offset="100%" stopColor="#b86a61" />
+                      <stop offset="100%" stopColor="#be3b36" />
                     </linearGradient>
                     <linearGradient id="defectAreaFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#b86a61" stopOpacity={0.3} />
-                      <stop offset="58%" stopColor="#b86a61" stopOpacity={0.1} />
+                      <stop offset="0%" stopColor="#be3b36" stopOpacity={0.26} />
+                      <stop offset="58%" stopColor="#be3b36" stopOpacity={0.09} />
                       <stop offset="100%" stopColor="#ffffff" stopOpacity={0.02} />
                     </linearGradient>
                     <linearGradient id="normalAreaFill" x1="0" y1="0" x2="0" y2="1">
@@ -177,7 +183,7 @@ export default function DashboardPage() {
                   <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#7a8796", fontSize: 11 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: "#7a8796", fontSize: 11 }} width={34} />
                   <Tooltip content={<DashboardTooltip />} />
-                  <ReferenceLine y={averageDefective(metrics.trend)} stroke="#f0ad29" strokeDasharray="5 5" />
+                  <ReferenceLine y={averageDefective(metrics.trend)} stroke="#8f5a08" strokeDasharray="5 5" />
                   <Area
                     type="monotone"
                     dataKey="normal"
@@ -191,7 +197,7 @@ export default function DashboardPage() {
                   <Area
                     type="monotone"
                     dataKey="defective"
-                    stroke="url(#defectAreaStroke)"
+                    stroke="#be3b36"
                     fill="url(#defectAreaFill)"
                     strokeWidth={3}
                     dot={{ r: 4, strokeWidth: 2, fill: "#ffffff" }}
@@ -211,29 +217,30 @@ export default function DashboardPage() {
               <div className="dashboard-panel-head">
                 <div>
                   <h2>공정별 불량률</h2>
-                  <p>위험 기준 15%를 넘는 공정을 우선순위로 정렬했습니다.</p>
+                  <p>공정별 불량률을 비교합니다.</p>
                 </div>
               </div>
-              <div className="dashboard-rank-chart">
-                <div className="dashboard-rank-threshold">
-                  <span style={{ left: "15%" }} />
-                  <em>위험 기준 15%</em>
+              <div className="dashboard-process-bars">
+                <ResponsiveContainer width="100%" height={246}>
+                  <BarChart data={processChart} margin={{ top: 24, right: 8, left: -18, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="4 8" stroke="#e7edf2" vertical={false} />
+                    <XAxis dataKey="processName" axisLine={false} tickLine={false} tick={{ fill: "#667485", fontSize: 12, fontWeight: 800 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: "#7a8796", fontSize: 11 }} width={34} />
+                    <Tooltip content={<DashboardTooltip />} />
+                    <Bar dataKey="defectRate" name="불량률" radius={[8, 8, 0, 0]} barSize={62}>
+                      {processChart.map((item) => (
+                        <Cell fill={riskColor(item.riskLevel)} key={item.processId} />
+                      ))}
+                      <LabelList dataKey="defectRate" position="top" formatter={(value: number) => `${value}%`} fill="#9a5a54" fontSize={12} fontWeight={900} />
+                    </Bar>
+                    <ReferenceLine y={15} stroke="#f0ad29" strokeDasharray="5 5" />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="dashboard-process-summary">
+                  {processChart.map((item) => (
+                    <span key={item.processId}><i style={{ background: riskColor(item.riskLevel) }} /> {item.processName} {item.defective}/{item.total}건</span>
+                  ))}
                 </div>
-                {processChart.map((item, index) => (
-                  <article className={`dashboard-rank-row ${item.riskLevel} rank-${index + 1}`} key={item.processId}>
-                    <div className="dashboard-rank-row-head">
-                      <span><b>{String(index + 1).padStart(2, "0")}</b>{item.processName}</span>
-                      <strong>{item.defectRate}%</strong>
-                    </div>
-                    <div className="dashboard-rank-track">
-                      <i style={{ width: `${Math.min(item.defectRate, 100)}%`, background: riskColor(item.riskLevel) }} />
-                    </div>
-                    <div className="dashboard-rank-row-foot">
-                      <span>불량 {item.defective}/{item.total}건</span>
-                      <em>{riskLabels[item.riskLevel]}</em>
-                    </div>
-                  </article>
-                ))}
               </div>
             </div>
 
@@ -242,14 +249,31 @@ export default function DashboardPage() {
               <p>전체 불량 대비 유형별 비율입니다.</p>
               {defectRows.length ? (
                 <div className="dashboard-defect-visual">
-                  <div className="dashboard-defect-lead" style={{ "--defect-color": defectRows[0]?.color } as React.CSSProperties}>
-                    <span>최다 발생</span>
-                    <strong>{metrics.summary.topDefectType ?? "-"}</strong>
-                    <em>{defectRows[0]?.percent ?? 0}%</em>
+                  <div className="dashboard-defect-donut" aria-label="주요 불량 유형 도넛 차트">
+                    <ResponsiveContainer width="100%" height={128}>
+                      <PieChart>
+                        <Pie
+                          data={defectRows}
+                          dataKey="count"
+                          nameKey="label"
+                          innerRadius={40}
+                          outerRadius={58}
+                          paddingAngle={3}
+                          stroke="#ffffff"
+                          strokeWidth={4}
+                        >
+                          {defectRows.map((item) => (
+                            <Cell fill={item.color} key={item.defectType} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<DashboardTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div>
-                    <strong>{metrics.summary.defectiveCount}건</strong>
-                    <span>전체 불량 중 최다 유형 비중을 기준으로 정렬했습니다.</span>
+                  <div className="dashboard-defect-donut-copy">
+                    <strong>{metrics.summary.topDefectType ?? "-"}</strong>
+                    <span>최다 불량 유형</span>
+                    <em>{defectRows[0]?.percent ?? 0}% · 총 {metrics.summary.defectiveCount}건</em>
                   </div>
                 </div>
               ) : null}
@@ -271,7 +295,7 @@ export default function DashboardPage() {
             <div className="dashboard-priority-head">
               <span><Wrench size={16} /> 우선 점검 대상</span>
               <strong>{topRiskEquipment.length ? `${topRiskEquipment.length}대 설비 확인 필요` : "즉시 점검 대상 없음"}</strong>
-              <p>고위험/주의 설비를 먼저 확인한 뒤 전체 설비 위험도 표에서 상세 수치를 검토합니다.</p>
+              <p>고위험/주의 설비만 빠르게 확인하고, 상세 검사 흐름은 검사 이력에서 추적합니다.</p>
             </div>
             {(topRiskEquipment.length ? topRiskEquipment : equipmentRows.slice(0, 3)).map((item) => (
               <article className={`dashboard-priority-card ${item.riskLevel}`} key={item.equipmentId}>
@@ -281,44 +305,6 @@ export default function DashboardPage() {
                 <em>{recommendedAction(item.riskLevel)}</em>
               </article>
             ))}
-          </section>
-
-          <section className="panel dashboard-risk-table-card">
-            <div className="dashboard-panel-head">
-              <div>
-                <h2>설비 위험도</h2>
-                <p>설비별 불량률과 위험도를 기준으로 우선 점검 대상을 확인하세요.</p>
-              </div>
-              <Link className="button secondary" href="/inspections">전체 설비 보기 <ChevronRight size={16} /></Link>
-            </div>
-            <div className="table-wrap">
-              <table className="table dashboard-risk-table">
-                <thead>
-                  <tr>
-                    <th>설비</th>
-                    <th>공정</th>
-                    <th>검사 수</th>
-                    <th>불량 수</th>
-                    <th>불량률</th>
-                    <th>위험도</th>
-                    <th>권장 조치</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {equipmentRows.map((item) => (
-                    <tr key={item.equipmentId}>
-                      <td><strong>{item.equipmentName}</strong></td>
-                      <td>{item.processName}</td>
-                      <td>{item.total}</td>
-                      <td>{item.defective}</td>
-                      <td>{item.defectRate}%</td>
-                      <td><span className={`dashboard-risk ${item.riskLevel}`}>{riskLabels[item.riskLevel]}</span></td>
-                      <td><span className={`dashboard-action ${item.riskLevel}`}>{recommendedAction(item.riskLevel)}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </section>
         </>
       )}
@@ -401,8 +387,14 @@ function qualityStatusLabel(risk: RiskLevel) {
   return "품질 상태 안정";
 }
 
-function riskColor(_risk: RiskLevel) {
-  return "#d97870";
+function riskColor(risk: RiskLevel) {
+  if (risk === "high") {
+    return "#be3b36";
+  }
+  if (risk === "medium") {
+    return "#8f5a08";
+  }
+  return "#25765c";
 }
 
 function averageDefective(trend: DashboardMetricsResponse["trend"]) {

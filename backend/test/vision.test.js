@@ -75,7 +75,7 @@ describe("vision model clients", () => {
 
     assert.equal(inspection.result, "normal");
     assert.equal(inspection.defectType, null);
-    assert.equal(inspection.status, "pending");
+    assert.equal(inspection.status, "closed");
     assert.equal(inspection.visionAnalysis.normalHintOverride, true);
   });
 });

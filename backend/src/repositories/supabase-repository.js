@@ -1,4 +1,5 @@
 import { equipment, manuals, processes } from "../domain.js";
+import { removeFeedback } from "../inspection-service.js";
 import { cosineSimilarity, tokenize } from "../rag/embedding.js";
 
 export class SupabaseRepository {
@@ -135,27 +136,66 @@ export class SupabaseRepository {
       body: JSON.stringify({
         result: updated.result,
         defect_type: updated.defectType,
-        status: updated.status
+        status: updated.status,
+        analyzed_payload: {
+          agentGuidance: updated.agentGuidance,
+          visionAnalysis: updated.visionAnalysis
+        }
       })
     });
 
-    if (updated.feedback) {
+    if (updated.feedback && !feedbackExists(current, updated.feedback.id)) {
+      const feedbackPayload = {
+        inspection_id: id,
+        corrected_result: updated.feedback.correctedResult || null,
+        corrected_defect_type: updated.feedback.correctedDefectType || null,
+        action_taken: updated.feedback.actionTaken,
+        reinspection_result: updated.feedback.reinspectionResult || null,
+        note: updated.feedback.note || null,
+        created_at: updated.feedback.createdAt
+      };
+
+      if (isUuid(updated.feedback.id)) {
+        feedbackPayload.id = updated.feedback.id;
+      }
+
       await this.request("/rest/v1/inspection_feedback", {
         method: "POST",
         headers: { prefer: "return=minimal" },
-        body: JSON.stringify({
-          inspection_id: id,
-          corrected_result: updated.feedback.correctedResult || null,
-          corrected_defect_type: updated.feedback.correctedDefectType || null,
-          action_taken: updated.feedback.actionTaken,
-          reinspection_result: updated.feedback.reinspectionResult || null,
-          note: updated.feedback.note || null,
-          created_at: updated.feedback.createdAt
-        })
+        body: JSON.stringify(feedbackPayload)
       });
     }
 
     return this.getInspection(id);
+  }
+
+  async deleteInspectionFeedback(inspectionId, feedbackId) {
+    const current = await this.getInspection(inspectionId);
+    if (!current) {
+      return null;
+    }
+
+    const result = removeFeedback(current, feedbackId);
+    if (!result.deleted) {
+      return null;
+    }
+
+    await this.request(`/rest/v1/inspection_feedback?id=eq.${encodeURIComponent(feedbackId)}&inspection_id=eq.${encodeURIComponent(inspectionId)}`, {
+      method: "DELETE",
+      headers: { prefer: "return=minimal" }
+    });
+
+    await this.request(`/rest/v1/inspections?id=eq.${encodeURIComponent(inspectionId)}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({
+        result: result.inspection.result,
+        defect_type: result.inspection.defectType,
+        status: result.inspection.status
+      })
+    });
+
+    return this.getInspection(inspectionId);
   }
 
   async listReports() {
@@ -420,6 +460,19 @@ function mapFeedbackRow(row) {
     note: row.note ?? undefined,
     createdAt: row.created_at
   };
+}
+
+function feedbackExists(inspection, feedbackId) {
+  if (!feedbackId) {
+    return false;
+  }
+
+  const history = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
+  return history.some((item) => item.id === feedbackId);
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value ?? ""));
 }
 
 function inspectionToRow(inspection) {

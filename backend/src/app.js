@@ -16,8 +16,10 @@ import {
 import {
   analyzeInspectionUseCase,
   applyInspectionFeedbackUseCase,
+  deleteInspectionFeedbackUseCase,
   getInspectionUseCase,
-  listInspectionsUseCase
+  listInspectionsUseCase,
+  updateInspectionChecklistUseCase
 } from "./application/use-cases/inspection-use-cases.js";
 import { getDashboardMetricsUseCase } from "./application/use-cases/dashboard-use-cases.js";
 import { askAgentQuestionUseCase } from "./application/use-cases/agent-use-cases.js";
@@ -97,6 +99,32 @@ async function routeRequest({ request, response, store, visionClient, env }) {
       throw methodNotAllowed();
     }
     await handleFeedback(request, response, store, inspectionFeedbackMatch[1]);
+    return;
+  }
+
+  const inspectionFeedbackDeleteMatch = pathname.match(/^\/api\/inspections\/([^/]+)\/feedback\/([^/]+)$/);
+  if (inspectionFeedbackDeleteMatch) {
+    if (request.method !== "DELETE") {
+      throw methodNotAllowed();
+    }
+    await handleDeleteFeedback(response, store, inspectionFeedbackDeleteMatch[1], decodeURIComponent(inspectionFeedbackDeleteMatch[2]));
+    return;
+  }
+
+  const inspectionChecklistMatch = pathname.match(/^\/api\/inspections\/([^/]+)\/checklist$/);
+  if (inspectionChecklistMatch) {
+    if (request.method !== "PATCH") {
+      throw methodNotAllowed();
+    }
+    const inspection = await updateInspectionChecklistUseCase({
+      store,
+      inspectionId: inspectionChecklistMatch[1],
+      payload: await readJson(request)
+    });
+    if (!inspection) {
+      throw notFound("Inspection was not found.");
+    }
+    sendJson(response, 200, { inspection });
     return;
   }
 
@@ -231,6 +259,14 @@ async function handleFeedback(request, response, store, inspectionId) {
   const inspection = await applyInspectionFeedbackUseCase({ store, inspectionId, feedback });
   if (!inspection) {
     throw notFound("Inspection was not found.");
+  }
+  sendJson(response, 200, { inspection });
+}
+
+async function handleDeleteFeedback(response, store, inspectionId, feedbackId) {
+  const inspection = await deleteInspectionFeedbackUseCase({ store, inspectionId, feedbackId });
+  if (!inspection) {
+    throw notFound("Inspection feedback was not found.");
   }
   sendJson(response, 200, { inspection });
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, Bot, ChevronDown, ClipboardList, Factory, FileText, History, LogOut, Upload } from "lucide-react";
+import { BarChart3, Bot, ClipboardList, Factory, FileText, History, LogOut, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { canAccess, clearSession, defaultRouteFor, readSession, roleLabels } from "@/features/auth/session";
@@ -10,20 +10,20 @@ import type { AppUser } from "@/features/auth/session";
 
 const nav = [
   { href: "/dashboard", label: "대시보드", icon: BarChart3 },
+  { href: "/inspections/new", label: "AI검사", icon: Upload },
   { href: "/inspections", label: "검사 이력", icon: History },
-  { href: "/inspections/new", label: "검사 등록", icon: Upload },
   { href: "/agent", label: "조치 Agent", icon: Bot },
   { href: "/reports", label: "보고서", icon: FileText },
-  { href: "/admin/manuals", label: "매뉴얼 관리", icon: ClipboardList }
+  { href: "/admin/manuals", label: "메뉴얼 관리", icon: ClipboardList }
 ];
 
 const pageTitles: Record<string, string> = {
-  "/inspections/new": "AI 검사",
+  "/inspections/new": "AI검사",
   "/inspections": "검사 이력",
   "/dashboard": "대시보드",
   "/agent": "조치 Agent",
-  "/reports": "리포트",
-  "/admin/manuals": "매뉴얼 관리"
+  "/reports": "보고서",
+  "/admin/manuals": "메뉴얼 관리"
 };
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -93,14 +93,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span>검사, 조치 기준, 리포트를 한 흐름에서 관리합니다.</span>
           </div>
           <div className="topbar-actions">
-            <button className="topbar-user" type="button" aria-label="사용자 메뉴">
+            <div className="topbar-user" aria-label="현재 사용자">
               <span className="topbar-user-avatar">{user.displayName.slice(0, 1)}</span>
               <span>
                 <strong>{user.displayName}</strong>
                 <small>{roleLabels[user.role]}</small>
               </span>
-              <ChevronDown size={16} />
-            </button>
+            </div>
             <button className="button secondary" onClick={logout} type="button">
               <LogOut size={16} /> 로그아웃
             </button>

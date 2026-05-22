@@ -48,7 +48,7 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient 
     defectType: analysis.defectType,
     confidence: analysis.confidence,
     modelName: analysis.modelName,
-    status: analysis.result === "defective" ? "action_required" : "pending",
+    status: analysis.result === "defective" ? "action_required" : "closed",
     inspectedAt: toKstIsoString(),
     memo,
     visionAnalysis: analysis.raw,
@@ -63,17 +63,26 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient 
 }
 
 export function toListItem(inspection) {
+  const normalized = normalizeInspectionStatus(inspection);
   return {
-    id: inspection.id,
-    imageUrl: inspection.imageUrl,
-    processName: inspection.processName,
-    equipmentName: inspection.equipmentName,
-    lotNo: inspection.lotNo,
-    result: inspection.result,
-    defectType: inspection.defectType,
-    confidence: inspection.confidence,
-    status: inspection.status,
-    inspectedAt: inspection.inspectedAt
+    id: normalized.id,
+    imageUrl: normalized.imageUrl,
+    processName: normalized.processName,
+    equipmentName: normalized.equipmentName,
+    lotNo: normalized.lotNo,
+    result: normalized.result,
+    defectType: normalized.defectType,
+    confidence: normalized.confidence,
+    status: normalized.status,
+    inspectedAt: normalized.inspectedAt,
+    checklistProgress: checklistProgress(normalized)
+  };
+}
+
+export function normalizeInspectionStatus(inspection) {
+  return {
+    ...inspection,
+    status: effectiveStatus(inspection)
   };
 }
 
@@ -87,7 +96,7 @@ export function filterInspections(inspections, query) {
       inspection.equipmentName,
       inspection.result,
       inspection.defectType,
-      inspection.status
+      effectiveStatus(inspection)
     ]
       .filter(Boolean)
       .join(" ")
@@ -100,15 +109,15 @@ export function filterInspections(inspections, query) {
       (!query.processId || inspection.processId === query.processId) &&
       (!query.equipmentId || inspection.equipmentId === query.equipmentId) &&
       (!query.result || inspection.result === query.result) &&
-      (!query.status || inspection.status === query.status)
+      (!query.status || effectiveStatus(inspection) === query.status)
     );
   });
 }
 
 export function summarizeInspections(inspections) {
   const total = inspections.length;
-  const actionRequired = inspections.filter((inspection) => inspection.status === "action_required").length;
-  const pendingReview = inspections.filter((inspection) => inspection.status === "pending").length;
+  const actionRequired = inspections.filter((inspection) => effectiveStatus(inspection) === "action_required").length;
+  const pendingReview = inspections.filter((inspection) => effectiveStatus(inspection) === "pending").length;
   const averageConfidence =
     total === 0
       ? 0
@@ -152,6 +161,7 @@ export function applyFeedback(inspection, feedback) {
         ? "action_required"
         : "reviewed";
   const feedbackEntry = {
+    id: `fb-${randomUUID().slice(0, 8)}`,
     correctedResult: feedback.correctedResult,
     correctedDefectType: feedback.correctedDefectType,
     actionTaken: feedback.actionTaken.trim(),
@@ -169,6 +179,102 @@ export function applyFeedback(inspection, feedback) {
     feedback: feedbackEntry,
     feedbackHistory: [feedbackEntry, ...existingHistory]
   };
+}
+
+export function updateChecklistItem(inspection, { itemId, checked }) {
+  if (!inspection.agentGuidance?.checklist?.length) {
+    throw badRequest("Agent checklist is not available for this inspection.");
+  }
+
+  let matched = false;
+  const checklist = inspection.agentGuidance.checklist.map((item) => {
+    if (item.id !== itemId) {
+      return item;
+    }
+
+    matched = true;
+    return { ...item, checked: Boolean(checked) };
+  });
+
+  if (!matched) {
+    throw badRequest("checklist item was not found.");
+  }
+
+  const nextInspection = {
+    ...inspection,
+    agentGuidance: {
+      ...inspection.agentGuidance,
+      checklist
+    }
+  };
+  const progress = checklistProgress(nextInspection);
+
+  if (inspection.status !== "closed" && progress.total > 0 && progress.completed === progress.total) {
+    nextInspection.status = "reviewed";
+  } else if (inspection.status === "reviewed" && inspection.result === "defective" && progress.completed < progress.total) {
+    nextInspection.status = "action_required";
+  }
+
+  return nextInspection;
+}
+
+export function checklistProgress(inspection) {
+  const checklist = inspection.agentGuidance?.checklist ?? [];
+  return {
+    completed: checklist.filter((item) => item.checked).length,
+    total: checklist.length
+  };
+}
+
+export function removeFeedback(inspection, feedbackId) {
+  const existingHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
+  const nextHistory = existingHistory.filter((item) => feedbackKey(item) !== feedbackId);
+
+  if (nextHistory.length === existingHistory.length) {
+    return { inspection, deleted: false };
+  }
+
+  const feedback = nextHistory[0];
+  const nextInspection = {
+    ...inspection,
+    feedback,
+    feedbackHistory: nextHistory,
+    status: statusAfterFeedbackDelete(inspection, feedback)
+  };
+
+  if (!feedback) {
+    delete nextInspection.feedback;
+  }
+
+  if (feedback?.correctedResult) {
+    nextInspection.result = feedback.correctedResult;
+    nextInspection.defectType = feedback.correctedResult === "defective"
+      ? feedback.correctedDefectType ?? inspection.defectType ?? "scratch"
+      : null;
+  }
+
+  return { inspection: nextInspection, deleted: true };
+}
+
+function feedbackKey(feedback) {
+  return feedback.id ?? feedback.createdAt;
+}
+
+function statusAfterFeedbackDelete(inspection, feedback) {
+  if (!feedback) {
+    return inspection.result === "defective" ? "action_required" : "closed";
+  }
+  if (feedback.reinspectionResult === "normal") {
+    return "closed";
+  }
+  if ((feedback.correctedResult ?? inspection.result) === "defective") {
+    return "action_required";
+  }
+  return "reviewed";
+}
+
+function effectiveStatus(inspection) {
+  return inspection.result === "normal" ? "closed" : inspection.status;
 }
 
 function clampNumber(value, min, max) {

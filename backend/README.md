@@ -27,6 +27,7 @@ npm test
 - `GET /api/inspections`
 - `GET /api/inspections/:inspectionId`
 - `POST /api/inspections/:inspectionId/feedback`
+- `DELETE /api/inspections/:inspectionId/feedback/:feedbackId`
 - `GET /api/dashboard/metrics`
 - `POST /api/agent/ask`
 - `GET /api/reports`

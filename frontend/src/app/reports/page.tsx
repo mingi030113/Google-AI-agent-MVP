@@ -10,6 +10,7 @@ import {
   FilePlus,
   FileText,
   Lightbulb,
+  LoaderCircle,
   Printer,
   SearchCheck,
   Sparkles,
@@ -27,6 +28,7 @@ export default function ReportsPage() {
   const [selected, setSelected] = useState<QualityReport | null>(null);
   const [form, setForm] = useState({ reportType: "daily" as "daily" | "weekly", startDate: "2026-05-12", endDate: "2026-05-18" });
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState("");
 
   function load() {
@@ -42,12 +44,16 @@ export default function ReportsPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    setError("");
+    setCreating(true);
     try {
       const result = await client.createReport(form);
       setReports((items) => [result.report, ...items]);
       setSelected(result.report);
     } catch (err) {
       setError(err instanceof Error ? err.message : "리포트 생성에 실패했습니다.");
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -87,6 +93,33 @@ export default function ReportsPage() {
   const selectedTotal = selected?.metrics.summary.totalInspections ?? 0;
   const selectedDefective = selected?.metrics.summary.defectiveCount ?? 0;
   const selectedHighRisk = selected?.riskProcesses.length ?? 0;
+  const endDateLimit = form.reportType === "weekly" ? addDays(form.startDate, 6) : form.startDate;
+  const dateRuleMessage = form.reportType === "daily"
+    ? "일일 리포트는 하루 단위로만 생성됩니다."
+    : "주간 리포트는 시작일 기준 최대 7일까지만 생성됩니다.";
+
+  function updateReportType(reportType: "daily" | "weekly") {
+    setForm((current) => ({
+      ...current,
+      reportType,
+      endDate: reportType === "daily" ? current.startDate : clampEndDate(current.endDate, current.startDate, addDays(current.startDate, 6))
+    }));
+  }
+
+  function updateStartDate(startDate: string) {
+    setForm((current) => ({
+      ...current,
+      startDate,
+      endDate: current.reportType === "daily" ? startDate : clampEndDate(current.endDate, startDate, addDays(startDate, 6))
+    }));
+  }
+
+  function updateEndDate(endDate: string) {
+    setForm((current) => ({
+      ...current,
+      endDate: current.reportType === "daily" ? current.startDate : clampEndDate(endDate, current.startDate, addDays(current.startDate, 6))
+    }));
+  }
 
   return (
     <AppShell>
@@ -103,21 +136,46 @@ export default function ReportsPage() {
           <form className="report-create-form" onSubmit={submit}>
             <div className="field">
               <label>유형</label>
-              <select className="select" value={form.reportType} onChange={(event) => setForm({ ...form, reportType: event.target.value as "daily" | "weekly" })}>
+              <select className="select" value={form.reportType} onChange={(event) => updateReportType(event.target.value as "daily" | "weekly")}>
                 <option value="daily">일일</option>
                 <option value="weekly">주간</option>
               </select>
             </div>
             <div className="field">
               <label>시작일</label>
-              <input className="input" type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} />
+              <input className="input" type="date" value={form.startDate} onChange={(event) => updateStartDate(event.target.value)} />
             </div>
             <div className="field">
               <label>종료일</label>
-              <input className="input" type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} />
+              <input
+                className="input"
+                disabled={form.reportType === "daily"}
+                max={endDateLimit}
+                min={form.startDate}
+                type="date"
+                value={form.endDate}
+                onChange={(event) => updateEndDate(event.target.value)}
+              />
             </div>
-            <button className="button"><FilePlus size={16} /> 생성</button>
+            <button className="button" disabled={creating} type="submit">
+              {creating ? <LoaderCircle className="button-spinner" size={16} /> : <FilePlus size={16} />}
+              {creating ? "생성 중" : "생성"}
+            </button>
+            <p className="report-date-rule">{dateRuleMessage}</p>
           </form>
+          {creating ? (
+            <div className="report-generation-status" role="status" aria-live="polite">
+              <div className="report-generation-head">
+                <span><LoaderCircle size={17} /> 리포트 생성 중</span>
+                <strong>{form.reportType === "daily" ? "일일" : "주간"} 리포트 분석을 진행하고 있습니다.</strong>
+              </div>
+              <div className="report-generation-steps" aria-label="리포트 생성 단계">
+                <span className="active"><i /> 검사 데이터 수집</span>
+                <span className="active"><i /> 불량률 및 위험 공정 분석</span>
+                <span><i /> 권장 조치 문서화</span>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="report-kpi-grid">
@@ -202,7 +260,6 @@ export default function ReportsPage() {
                   <h3>{selected.title}</h3>
                   <p>
                     {formatDate(selected.startDate)} - {formatDate(selected.endDate)} · 생성 {formatDate(selected.createdAt)}
-                    {selected.reportDriver ? ` · ${selected.reportDriver}` : ""}
                   </p>
                 </header>
 
@@ -315,4 +372,24 @@ export default function ReportsPage() {
 
 function formatDate(value: string) {
   return value.slice(0, 10);
+}
+
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function clampEndDate(value: string, min: string, max: string) {
+  if (!value || value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
 }

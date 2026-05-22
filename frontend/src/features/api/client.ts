@@ -54,6 +54,10 @@ export const client = {
       note?: string;
     }
   ) => api<{ inspection: InspectionDetail }>(`/api/inspections/${id}/feedback`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteFeedback: (inspectionId: string, feedbackId: string) =>
+    api<{ inspection: InspectionDetail }>(`/api/inspections/${inspectionId}/feedback/${encodeURIComponent(feedbackId)}`, { method: "DELETE" }),
+  updateChecklistItem: (inspectionId: string, payload: { itemId: string; checked: boolean }) =>
+    api<{ inspection: InspectionDetail }>(`/api/inspections/${inspectionId}/checklist`, { method: "PATCH", body: JSON.stringify(payload) }),
   dashboard: (params: Record<string, string> = {}) => {
     const query = new URLSearchParams(params);
     return api<DashboardMetricsResponse>(`/api/dashboard/metrics?${query}`);

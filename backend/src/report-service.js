@@ -16,6 +16,8 @@ export async function generateReport({ reportType, startDate, endDate }, inspect
     throw error;
   }
 
+  validateReportRange({ reportType, startDate, endDate });
+
   const metrics = buildDashboardMetrics(inspections, { startDate, endDate });
   const scoped = filterByDateRange(inspections, startDate, endDate);
   const riskProcesses = metrics.processMetrics
@@ -49,6 +51,45 @@ export async function generateReport({ reportType, startDate, endDate }, inspect
     reportDriver: generated.driver,
     createdAt: toKstIsoString()
   };
+}
+
+function validateReportRange({ reportType, startDate, endDate }) {
+  const start = parseReportDate(startDate);
+  const end = parseReportDate(endDate);
+
+  if (!start || !end) {
+    const error = new Error("startDate and endDate must be valid YYYY-MM-DD dates.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (end < start) {
+    const error = new Error("endDate must be the same as or later than startDate.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const daySpan = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  if (reportType === "daily" && daySpan !== 1) {
+    const error = new Error("Daily reports can only be generated for one date.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (reportType === "weekly" && daySpan > 7) {
+    const error = new Error("Weekly reports can cover up to 7 days.");
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function parseReportDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""))) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date;
 }
 
 async function generateAiAnalysis({ reportType, startDate, endDate, metrics, scoped, manuals, fallbackAnalysis, env }) {

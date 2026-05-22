@@ -179,7 +179,7 @@ export default function InspectionsPage() {
               <option value="pending">확인 대기</option>
               <option value="reviewed">확인 완료</option>
               <option value="action_required">조치 필요</option>
-              <option value="closed">처리 완료</option>
+              <option value="closed">완료</option>
             </select>
           </HistoryField>
           <HistoryField label="기간" wide>
@@ -192,7 +192,7 @@ export default function InspectionsPage() {
           </HistoryField>
           <div className="history-filter-actions">
             <button className="button secondary" type="button" onClick={reset}>
-              <RotateCcw size={15} /> 필터 초기화
+              <RotateCcw size={15} /> 초기화
             </button>
             <button className="button" type="submit">
               <Search size={15} /> 조회
@@ -221,6 +221,7 @@ export default function InspectionsPage() {
                   <th>신뢰도</th>
                   <th>위험도</th>
                   <th>상태</th>
+                  <th>RAG 체크</th>
                   <th>일시</th>
                   <th>작업</th>
                 </tr>
@@ -236,6 +237,7 @@ export default function InspectionsPage() {
                     <td>{Math.round(item.confidence * 100)}%</td>
                     <td><RiskPill value={riskFor(item.result, item.confidence)} /></td>
                     <td><StatusBadge value={item.status} /></td>
+                    <td><ChecklistProgress progress={item.checklistProgress} /></td>
                     <td>{item.inspectedAt.slice(0, 16).replace("T", " ")}</td>
                     <td>
                       <div className="history-actions">
@@ -317,6 +319,20 @@ function HistoryField({ label, children, wide = false }: { label: string; childr
 function RiskPill({ value }: { value: "low" | "medium" | "high" }) {
   const label = value === "high" ? "High" : value === "medium" ? "Medium" : "Low";
   return <span className={`history-risk ${value}`}>{label}</span>;
+}
+
+function ChecklistProgress({ progress }: { progress?: { completed: number; total: number } }) {
+  if (!progress?.total) {
+    return <span className="history-checklist-progress empty">-</span>;
+  }
+
+  const percent = Math.round((progress.completed / progress.total) * 100);
+  return (
+    <span className={percent === 100 ? "history-checklist-progress complete" : "history-checklist-progress"}>
+      <i><b style={{ width: `${percent}%` }} /></i>
+      <em>{progress.completed}/{progress.total}</em>
+    </span>
+  );
 }
 
 function riskFor(result: string, confidence: number) {
