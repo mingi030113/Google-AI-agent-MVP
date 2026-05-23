@@ -66,6 +66,11 @@ async function routeRequest({ request, response, store, visionClient, env }) {
     return;
   }
 
+  if (request.method === "GET" && pathname === "/api/debug/gemini") {
+    sendJson(response, 200, await checkGeminiConfig(env));
+    return;
+  }
+
   if (request.method === "GET" && pathname === "/api/master-data") {
     const [processes, equipment] = await Promise.all([store.listProcesses(), store.listEquipment()]);
     sendJson(response, 200, { processes, equipment });
@@ -310,4 +315,79 @@ function contentTypeFor(fileName) {
     ".gif": "image/gif",
     ".svg": "image/svg+xml"
   }[extension] ?? "application/octet-stream";
+}
+
+async function checkGeminiConfig(env) {
+  const apiKey = env.GEMINI_API_KEY?.trim();
+  const models = [
+    env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
+    env.GEMINI_AGENT_MODEL || "gemini-2.5-flash",
+    env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-2.5-flash"
+  ].filter((model, index, list) => model && list.indexOf(model) === index);
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      hasApiKey: false,
+      models: []
+    };
+  }
+
+  const results = [];
+  for (const model of models) {
+    results.push(await checkGeminiModel({ apiKey, model }));
+  }
+
+  return {
+    ok: results.every((result) => result.ok),
+    hasApiKey: true,
+    visionModel: env.GEMINI_VISION_MODEL || null,
+    agentModel: env.GEMINI_AGENT_MODEL || null,
+    reportModel: env.GEMINI_REPORT_MODEL || null,
+    models: results
+  };
+}
+
+async function checkGeminiModel({ apiKey, model }) {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Return JSON only: {\"ok\":true}" }] }],
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json"
+          }
+        })
+      }
+    );
+    const text = await response.text();
+    const payload = parseJsonSafely(text);
+    return {
+      ok: response.ok,
+      model,
+      status: response.status,
+      finishReason: payload?.candidates?.[0]?.finishReason,
+      errorStatus: payload?.error?.status,
+      errorMessage: payload?.error?.message
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      model,
+      status: 0,
+      errorMessage: error instanceof Error ? error.message : "Gemini request failed."
+    };
+  }
+}
+
+function parseJsonSafely(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
