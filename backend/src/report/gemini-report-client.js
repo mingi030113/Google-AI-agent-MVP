@@ -1,7 +1,7 @@
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
 
 export class GeminiQualityReportClient {
-  constructor({ apiKey, model = "gemini-2.5-flash", endpoint = GEMINI_ENDPOINT } = {}) {
+  constructor({ apiKey, model = "gemini-3-flash-preview", endpoint = GEMINI_ENDPOINT } = {}) {
     this.apiKey = apiKey;
     this.model = model;
     this.endpoint = endpoint.replace(/\/$/, "");

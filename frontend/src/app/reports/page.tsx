@@ -93,6 +93,12 @@ export default function ReportsPage() {
   const selectedTotal = selected?.metrics.summary.totalInspections ?? 0;
   const selectedDefective = selected?.metrics.summary.defectiveCount ?? 0;
   const selectedHighRisk = selected?.riskProcesses.length ?? 0;
+  const selectedUsesGemini = selected?.reportDriver?.startsWith("gemini:") ?? false;
+  const selectedReportEngine = selectedUsesGemini
+    ? `Gemini 사용 · ${selected?.reportDriver?.replace(/^gemini:/, "")}`
+    : selected?.reportDriver === "local-fallback"
+      ? "로컬 리포트 사용"
+      : "리포트 엔진 대기";
   const endDateLimit = form.reportType === "weekly" ? addDays(form.startDate, 6) : form.startDate;
   const dateRuleMessage = form.reportType === "daily"
     ? "일일 리포트는 하루 단위로만 생성됩니다."
@@ -172,7 +178,7 @@ export default function ReportsPage() {
               <div className="report-generation-steps" aria-label="리포트 생성 단계">
                 <span className="active"><i /> 검사 데이터 수집</span>
                 <span className="active"><i /> 불량률 및 위험 공정 분석</span>
-                <span><i /> 권장 조치 문서화</span>
+                <span className="active"><i /> 권장 조치 문서화</span>
               </div>
             </div>
           ) : null}
@@ -256,7 +262,10 @@ export default function ReportsPage() {
             ) : (
               <article className="report-document">
                 <header>
-                  <span>{selected.reportType === "daily" ? "Daily Quality Report" : "Weekly Quality Report"}</span>
+                  <div className="report-document-kicker">
+                    <span>{selected.reportType === "daily" ? "Daily Quality Report" : "Weekly Quality Report"}</span>
+                    <em className={selectedUsesGemini ? "gemini" : ""}><Sparkles size={13} /> {selectedReportEngine}</em>
+                  </div>
                   <h3>{selected.title}</h3>
                   <p>
                     {formatDate(selected.startDate)} - {formatDate(selected.endDate)} · 생성 {formatDate(selected.createdAt)}

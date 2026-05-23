@@ -100,7 +100,7 @@ async function generateAiAnalysis({ reportType, startDate, endDate, metrics, sco
   try {
     const client = new GeminiQualityReportClient({
       apiKey: env.GEMINI_API_KEY,
-      model: env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-2.5-flash"
+      model: env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-3-flash-preview"
     });
     const result = await client.generate({
       reportType,
@@ -112,7 +112,8 @@ async function generateAiAnalysis({ reportType, startDate, endDate, metrics, sco
       fallbackAnalysis
     });
     return { analysis: result.analysis, driver: result.raw.modelName ?? client.modelName };
-  } catch {
+  } catch (error) {
+    console.warn("Gemini report generation failed; falling back to local report:", error);
     return { analysis: fallbackAnalysis, driver: "local-fallback" };
   }
 }

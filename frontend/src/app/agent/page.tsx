@@ -494,6 +494,10 @@ function AgentStructuredAnswer({
   const typedAnswer = useTypewriter(response.answer, animate ? 12 : 0);
   const isTyping = typedAnswer.length < response.answer.length;
   const similarCount = response.similarCases?.length ?? 0;
+  const usesGemini = response.answerDriver === "gemini" || response.checklist.some((item) => item.id.startsWith("gemini-"));
+  const answerEngineLabel = usesGemini
+    ? `Gemini 사용${response.answerModel ? ` · ${response.answerModel}` : ""}`
+    : "로컬 RAG 사용";
 
   return (
     <div className="agent-structured-answer">
@@ -501,7 +505,10 @@ function AgentStructuredAnswer({
         <div>
           <span className="agent-status-light" />
           <strong>AI 판단 결과</strong>
-          <p>{inspection ? `${inspection.equipmentName} · ${inspection.defectType ?? "검사"} 기준 분석` : "기준서 기반 조치 분석"}</p>
+          <p>
+            {inspection ? `${inspection.equipmentName} · ${inspection.defectType ?? "검사"} 기준 분석` : "기준서 기반 조치 분석"}
+            <span className={usesGemini ? "agent-engine-badge gemini" : "agent-engine-badge"}>{answerEngineLabel}</span>
+          </p>
         </div>
         <em className={isTyping ? "" : "complete"}>{isTyping ? "응답 생성 중" : "판단 완료"}</em>
       </div>
@@ -510,6 +517,7 @@ function AgentStructuredAnswer({
         <span><BookOpen size={14} /> 기준서 {response.sources.length}건</span>
         <span><Gauge size={14} /> 유사 이력 {similarCount}건</span>
         <span><ShieldCheck size={14} /> RAG 기반</span>
+        <span className={usesGemini ? "gemini" : ""}><Sparkles size={14} /> {answerEngineLabel}</span>
       </div>
 
       <section className="agent-answer-summary">

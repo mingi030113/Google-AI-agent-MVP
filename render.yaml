@@ -26,12 +26,12 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_VISION_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3-flash-preview
       - key: AGENT_ANSWER_DRIVER
         value: gemini
       - key: GEMINI_AGENT_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3-flash-preview
       - key: REPORT_GENERATION_DRIVER
         value: gemini
       - key: GEMINI_REPORT_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3-flash-preview

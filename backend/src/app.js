@@ -320,9 +320,9 @@ function contentTypeFor(fileName) {
 async function checkGeminiConfig(env) {
   const apiKey = env.GEMINI_API_KEY?.trim();
   const models = [
-    env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
-    env.GEMINI_AGENT_MODEL || "gemini-2.5-flash",
-    env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-2.5-flash"
+    env.GEMINI_VISION_MODEL || "gemini-3-flash-preview",
+    env.GEMINI_AGENT_MODEL || "gemini-3-flash-preview",
+    env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-3-flash-preview"
   ].filter((model, index, list) => model && list.indexOf(model) === index);
 
   if (!apiKey) {

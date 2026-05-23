@@ -129,6 +129,8 @@ export interface DashboardMetricsResponse {
 }
 
 export interface AskAgentResponse extends AgentGuidance {
+  answerDriver?: "gemini" | "local" | string;
+  answerModel?: string;
   fallback: boolean;
 }
 

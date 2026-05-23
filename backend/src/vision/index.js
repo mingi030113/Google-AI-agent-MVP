@@ -13,7 +13,7 @@ export function createVisionModelClient({ env = process.env } = {}) {
   if (driver === "gemini") {
     const gemini = new GeminiVisionModelClient({
       apiKey: env.GEMINI_API_KEY,
-      model: env.GEMINI_VISION_MODEL ?? "gemini-2.5-flash"
+      model: env.GEMINI_VISION_MODEL ?? "gemini-3-flash-preview"
     });
     return new FallbackVisionModelClient({ primary: gemini, fallback: local, kind: "gemini" });
   }

@@ -121,6 +121,7 @@ describe("quality agent backend API", () => {
       body: JSON.stringify({ question: "scratch 조치 기준 알려줘", defectType: "scratch" })
     });
     assert.equal(answer.fallback, false);
+    assert.equal(answer.answerDriver, "local");
     assert.ok(answer.sources.length > 0);
     assert.ok(answer.similarCases.length > 0);
     assert.equal(answer.similarCases[0].defectType, "scratch");
