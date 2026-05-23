@@ -138,7 +138,7 @@ async function generateFinalAnswer({ env, question, intent, inspection, defectTy
   try {
     const client = new GeminiAgentAnswerClient({
       apiKey: env.GEMINI_API_KEY,
-      model: env.GEMINI_AGENT_MODEL ?? "gemini-3-flash-preview"
+      model: env.GEMINI_AGENT_MODEL ?? "gemini-2.5-flash"
     });
     return await client.generate({
       question,

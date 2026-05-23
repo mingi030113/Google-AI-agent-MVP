@@ -11,7 +11,6 @@ import {
   ClipboardCheck,
   Gauge,
   Home,
-  RefreshCcw,
   ShieldCheck,
   TrendingUp,
   Wrench
@@ -101,7 +100,6 @@ export default function DashboardPage() {
         <span>대시보드</span>
         <ChevronRight size={14} />
         <strong>품질 대시보드</strong>
-        <span className="dashboard-updated"><RefreshCcw size={13} /> 마지막 업데이트 {formatUpdate(metrics?.summary.todayDate)}</span>
       </div>
 
       <header className="dashboard-title-row">
@@ -402,11 +400,4 @@ function averageDefective(trend: DashboardMetricsResponse["trend"]) {
     return 0;
   }
   return Math.round((trend.reduce((sum, item) => sum + item.defective, 0) / trend.length) * 10) / 10;
-}
-
-function formatUpdate(date?: string) {
-  if (!date) {
-    return "-";
-  }
-  return `${date} 19:30`;
 }

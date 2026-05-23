@@ -148,9 +148,6 @@ export default function NewInspectionPage() {
               <span><Activity size={15} /> 검사 요청</span>
               <h2>이미지 및 생산 정보</h2>
             </div>
-            <button className="button secondary" type="button" onClick={() => setForm((current) => ({ ...current, lotNo: "LOT-20260518-001", memo: "scratch 의심" }))}>
-              <FileImage size={16} /> 샘플 이미지 사용
-            </button>
           </div>
 
           <label className={`inspection-dropzone ${preview ? "has-image" : ""}`}>

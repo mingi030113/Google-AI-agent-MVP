@@ -100,7 +100,7 @@ async function generateAiAnalysis({ reportType, startDate, endDate, metrics, sco
   try {
     const client = new GeminiQualityReportClient({
       apiKey: env.GEMINI_API_KEY,
-      model: env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-3-flash-preview"
+      model: env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-2.5-flash"
     });
     const result = await client.generate({
       reportType,

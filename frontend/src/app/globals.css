@@ -1,4 +1,5 @@
 :root {
+  --ui-scale: 0.67;
   --bg: #eef2f5;
   --bg-soft: #f7f9fb;
   --panel: #ffffff;
@@ -25,10 +26,15 @@
   --glass-bg-strong: rgba(255, 255, 255, 0.84);
   --glass-border: rgba(207, 217, 228, 0.72);
   --glass-shadow: 0 18px 44px rgba(21, 32, 43, 0.08);
-  --agent-panel-height: clamp(680px, calc(100vh - 172px), 820px);
+  --agent-panel-height: clamp(560px, calc(100vh - 190px), 720px);
   --agent-card-radius: 8px;
   --agent-panel-pad: 18px;
   --agent-control-height: 44px;
+}
+
+html {
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 * {
@@ -37,6 +43,8 @@
 
 body {
   margin: 0;
+  min-height: 100%;
+  overflow-x: hidden;
   background:
     linear-gradient(rgba(15, 58, 73, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(15, 58, 73, 0.018) 1px, transparent 1px),
@@ -47,6 +55,14 @@ body {
   background-size: 28px 28px, 28px 28px, auto, auto, auto, auto;
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+body > .app-shell,
+body > .login-shell,
+body > .content {
+  width: calc(100% / var(--ui-scale));
+  min-height: calc(100vh / var(--ui-scale));
+  zoom: var(--ui-scale);
 }
 
 a {
@@ -185,6 +201,7 @@ strong {
   background: rgba(255, 255, 255, 0.74);
   border-bottom: 1px solid rgba(216, 224, 231, 0.78);
   display: flex;
+  gap: 18px;
   justify-content: space-between;
   align-items: center;
   padding: 0 30px;
@@ -193,6 +210,7 @@ strong {
 }
 
 .topbar-title {
+  min-width: 0;
   display: grid;
   gap: 3px;
 }
@@ -202,14 +220,20 @@ strong {
 }
 
 .topbar-title span {
+  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topbar-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .topbar-user {
@@ -256,14 +280,21 @@ strong {
 }
 
 .topbar-actions .button {
+  flex: 0 0 auto;
   min-height: var(--agent-control-height);
+  white-space: nowrap;
 }
 
 .content {
-  width: min(1520px, 100%);
+  min-width: 0;
+  width: min(2000px, 100%);
   padding: 30px;
   display: grid;
   gap: 20px;
+}
+
+.content > * {
+  min-width: 0;
 }
 
 .page-header {
@@ -5510,8 +5541,7 @@ strong {
   grid-template-columns: minmax(292px, 0.82fr) minmax(560px, 1.58fr) minmax(324px, 0.92fr);
   gap: 18px;
   align-items: stretch;
-  height: var(--agent-panel-height);
-  min-height: 0;
+  min-height: var(--agent-panel-height);
 }
 
 .agent-titlebar h1 {
@@ -5526,7 +5556,6 @@ strong {
 .agent-chat-card,
 .agent-evidence-card {
   min-height: 0;
-  height: 100%;
   border: 1px solid var(--glass-border);
   border-radius: var(--agent-card-radius);
   background:
@@ -5637,8 +5666,7 @@ strong {
 }
 
 .agent-ready-panel {
-  min-height: 100%;
-  height: 100%;
+  min-height: clamp(420px, 54vh, 560px);
   border: 1px dashed rgba(174, 187, 199, 0.82);
   background:
     linear-gradient(180deg, rgba(17, 109, 119, 0.04), rgba(255, 255, 255, 0) 180px),
@@ -7521,7 +7549,7 @@ strong {
   }
 
   .agent-workspace {
-    height: auto;
+    min-height: 0;
   }
 
   .agent-chat-card {
@@ -7534,6 +7562,10 @@ strong {
 }
 
 @media (max-width: 900px) {
+  :root {
+    --ui-scale: 1;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
   }
@@ -7553,6 +7585,17 @@ strong {
 
   .topbar {
     padding: 16px 20px;
+  }
+
+  .topbar-title span {
+    white-space: normal;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    margin-left: 0;
   }
 
   .content {
@@ -7633,6 +7676,14 @@ strong {
   body {
     background: #ffffff !important;
     color: #111827;
+  }
+
+  body > .app-shell,
+  body > .login-shell,
+  body > .content {
+    width: auto;
+    min-height: auto;
+    zoom: 1;
   }
 
   .sidebar,

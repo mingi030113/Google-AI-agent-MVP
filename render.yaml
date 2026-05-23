@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: quality-agent-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_INSPECTION_IMAGE_BUCKET
+        value: inspection-images
+      - key: SUPABASE_MANUAL_FILE_BUCKET
+        value: manual-files
+      - key: VISION_DRIVER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_VISION_MODEL
+        value: gemini-2.5-flash
+      - key: AGENT_ANSWER_DRIVER
+        value: gemini
+      - key: GEMINI_AGENT_MODEL
+        value: gemini-2.5-flash
+      - key: REPORT_GENERATION_DRIVER
+        value: gemini
+      - key: GEMINI_REPORT_MODEL
+        value: gemini-2.5-flash
