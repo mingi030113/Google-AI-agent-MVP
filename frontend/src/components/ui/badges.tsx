@@ -2,6 +2,7 @@ import type { InspectionResult, InspectionStatus, RiskLevel } from "@/features/t
 
 const resultLabels: Record<InspectionResult, string> = {
   normal: "정상",
+  suspicious: "의심",
   defective: "불량"
 };
 

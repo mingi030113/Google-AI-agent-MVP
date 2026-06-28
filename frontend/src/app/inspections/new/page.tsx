@@ -19,8 +19,9 @@ import {
   UploadCloud
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
+import { LocalizationOverlay } from "@/components/vision/LocalizationOverlay";
 import { client } from "@/features/api/client";
-import type { AgentGuidance, InspectionDetail, MasterData } from "@/features/types/api";
+import type { AgentGuidance, InspectionDetail, MasterData, VisionLocalization } from "@/features/types/api";
 
 type StageKey = "ready" | "upload" | "vision" | "rag" | "done" | "error";
 
@@ -36,6 +37,12 @@ const defectLabels: Record<string, string> = {
   contamination: "오염",
   dent: "찍힘",
   crack: "크랙"
+};
+
+const resultLabels: Record<string, string> = {
+  normal: "정상",
+  suspicious: "재검사 권장",
+  defective: "불량 감지"
 };
 
 const defectOrder = ["crack", "scratch", "contamination", "dent"];
@@ -76,16 +83,18 @@ export default function NewInspectionPage() {
     [master, form.processId]
   );
 
-  const defectName = inspection?.defectType ? defectLabels[inspection.defectType] ?? inspection.defectType : "-";
+  const defectCandidate = inspection?.defectType ?? inspection?.visionAnalysis?.defectTypeCandidate ?? null;
+  const defectName = defectCandidate ? defectLabels[defectCandidate] ?? defectCandidate : "-";
   const confidence = inspection ? `${Math.round(inspection.confidence * 100)}%` : "-";
-  const decision = inspection ? (inspection.result === "defective" ? "불량 감지" : "정상") : "-";
-  const risk = inspection ? (inspection.result === "defective" ? "High" : "Low") : "-";
+  const decision = inspection ? resultLabels[inspection.result] ?? inspection.result : "-";
+  const anomalyScore = formatScore(inspection?.visionAnalysis?.anomalyScore);
+  const imageThreshold = formatScore(inspection?.visionAnalysis?.threshold?.image);
   const defectScores = buildDefectScores(inspection);
   const selectedProcess = master?.processes.find((item) => item.id === form.processId);
   const selectedEquipment = master?.equipment.find((item) => item.id === form.equipmentId);
   const requestReady = Boolean(image && form.processId && form.equipmentId && form.lotNo);
-  const hasDefect = inspection?.result === "defective";
-  const DecisionIcon = inspection?.result === "defective" ? AlertTriangle : ShieldCheck;
+  const hasAnomaly = inspection ? inspection.result !== "normal" : false;
+  const DecisionIcon = hasAnomaly ? AlertTriangle : ShieldCheck;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -170,7 +179,7 @@ export default function NewInspectionPage() {
           <section className="inspection-vision-panel">
             <div className="inspection-vision-head">
               <span><ScanLine size={15} /> Vision Workspace</span>
-              <strong>{inspection ? hasDefect ? "결함 영역 표시 완료" : "결함 없음 확인" : image ? "분석 대기 중" : "이미지 입력 대기"}</strong>
+              <strong>{inspection ? hasAnomaly ? "결함 영역 표시 완료" : "결함 없음 확인" : image ? "분석 대기 중" : "이미지 입력 대기"}</strong>
             </div>
             <div className="inspection-image-row">
               <PreviewBox title="원본 이미지" src={preview} emptyText="이미지 업로드 시 원본이 표시됩니다." />
@@ -181,8 +190,9 @@ export default function NewInspectionPage() {
               <PreviewBox
                 title="AI 검출 결과"
                 src={preview}
-                detected={hasDefect}
-                status={inspection ? hasDefect ? "Defect marked" : "No defect" : undefined}
+                detected={hasAnomaly}
+                localization={inspection?.visionAnalysis?.localization}
+                status={inspection ? hasAnomaly ? "Localization loaded" : "No defect" : undefined}
                 emptyText="분석 실행 시 검출 결과가 표시됩니다."
               />
             </div>
@@ -256,8 +266,8 @@ export default function NewInspectionPage() {
                   <strong><DecisionIcon size={22} /> {decision}</strong>
                 </div>
                 <ResultMetric label="불량 유형" value={defectName} />
-                <ResultMetric label="신뢰도" value={confidence} />
-                <ResultMetric label="위험도" value={risk} />
+                <ResultMetric label="이상 점수" value={anomalyScore} />
+                <ResultMetric label="Threshold" value={imageThreshold} />
               </div>
               <div className="inspection-decision-meta">
                 <span><FileText size={14} /> LOT {form.lotNo}</span>
@@ -283,7 +293,7 @@ export default function NewInspectionPage() {
 
           {inspection ? (
             <div className="inspection-analysis-grid">
-              {hasDefect ? (
+              {hasAnomaly ? (
                 <div className="panel inspection-defect-card">
                   <h2>결함 유형 신뢰도</h2>
                   <div className="inspection-defect-list">
@@ -358,19 +368,30 @@ export default function NewInspectionPage() {
   );
 }
 
-function PreviewBox({ title, src, detected, status, emptyText }: { title: string; src: string; detected?: boolean; status?: string; emptyText: string }) {
+function PreviewBox({
+  title,
+  src,
+  detected,
+  status,
+  localization,
+  emptyText
+}: {
+  title: string;
+  src: string;
+  detected?: boolean;
+  status?: string;
+  localization?: VisionLocalization | null;
+  emptyText: string;
+}) {
   return (
     <div className="inspection-preview-box">
       <div className="inspection-preview-title">
         <strong>{title}</strong>
-        <span>{status ?? (detected ? "Defect marked" : src ? "Image loaded" : "Waiting")}</span>
+        <span>{status ?? (detected ? "Localization loaded" : src ? "Image loaded" : "Waiting")}</span>
       </div>
       <div className={`inspection-preview-image ${detected ? "detected" : ""}`}>
         {src ? (
-          <>
-            <img src={src} alt={title} />
-            {detected ? <><i /><em>AI DETECTED</em></> : null}
-          </>
+          <LocalizationOverlay src={src} alt={title} localization={localization} active={Boolean(detected && localization)} />
         ) : (
           <span>
             <ImageIcon size={35} />
@@ -458,14 +479,15 @@ function stageClass(current: StageKey, target: StageKey) {
 }
 
 function buildDefectScores(inspection: InspectionDetail | null) {
-  if (!inspection || inspection.result !== "defective") {
+  if (!inspection || inspection.result === "normal") {
     return [];
   }
 
   const scores = inspection.visionAnalysis?.defectScores ?? {};
-  const fallbackConfidence = inspection.result === "defective" ? inspection.confidence : 0.08;
+  const defectCandidate = inspection.defectType ?? inspection.visionAnalysis?.defectTypeCandidate ?? null;
+  const fallbackConfidence = inspection.confidence || 0.08;
   const rows = defectOrder.map((type, index) => {
-    const fallback = type === inspection.defectType
+    const fallback = type === defectCandidate
       ? fallbackConfidence
       : Math.max(0.05, fallbackConfidence * [0.32, 0.22, 0.14][index % 3]);
     const value = Number(scores[type] ?? fallback);
@@ -477,6 +499,10 @@ function buildDefectScores(inspection: InspectionDetail | null) {
   });
 
   return rows.sort((left, right) => right.percent - left.percent);
+}
+
+function formatScore(value: number | undefined) {
+  return Number.isFinite(value) ? Number(value).toFixed(3) : "-";
 }
 
 function priorityLabel(priority: "low" | "medium" | "high") {

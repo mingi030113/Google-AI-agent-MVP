@@ -14,8 +14,9 @@ import {
   Trash2
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
+import { LocalizationOverlay } from "@/components/vision/LocalizationOverlay";
 import { client, uploadBase } from "@/features/api/client";
-import type { InspectionDetail, InspectionFeedback, InspectionResult } from "@/features/types/api";
+import type { InspectionDetail, InspectionFeedback, InspectionResult, VisionLocalization } from "@/features/types/api";
 
 type FeedbackForm = {
   correctedResult: string;
@@ -37,6 +38,7 @@ const emptyFeedback: FeedbackForm = {
 
 const resultLabels: Record<string, string> = {
   normal: "정상",
+  suspicious: "의심",
   defective: "불량"
 };
 
@@ -148,6 +150,8 @@ export default function InspectionDetailPage() {
   }
 
   const risk = riskFor(inspection);
+  const hasAnomaly = inspection.result !== "normal";
+  const defectCandidate = inspection.defectType ?? inspection.visionAnalysis?.defectTypeCandidate ?? null;
   const feedbackHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
   const sources = inspection.agentGuidance?.sources ?? [];
   const checklist = inspection.agentGuidance?.checklist ?? [];
@@ -189,11 +193,11 @@ export default function InspectionDetailPage() {
             </div>
 
             <div className="detail-summary-grid">
-              <SummaryBox label="최종 판정" value={resultLabels[inspection.result]} tone={inspection.result === "defective" ? "red" : "green"} />
-              <SummaryBox label="불량 유형" value={inspection.defectType ?? "-"} />
+              <SummaryBox label="최종 판정" value={resultLabels[inspection.result]} tone={toneForResult(inspection.result)} />
+              <SummaryBox label="불량 유형" value={defectCandidate ?? "-"} />
               <SummaryBox label="신뢰도" value={`${Math.round(inspection.confidence * 100)}%`} />
               <SummaryBox label="위험도" value={risk.label} tone={risk.tone} />
-              <SummaryBox label="상태" value={statusLabels[inspection.status]} tone={inspection.status === "action_required" ? "red" : "green"} />
+              <SummaryBox label="상태" value={statusLabels[inspection.status]} tone={toneForStatus(inspection.status)} />
             </div>
 
             <div className="detail-image-grid">
@@ -201,13 +205,16 @@ export default function InspectionDetailPage() {
               <InspectionImage
                 title="AI 검출 결과"
                 src={uploadBase(inspection.imageUrl)}
-                marker={inspection.result === "defective" ? `${inspection.defectType ?? "defect"} ${inspection.confidence.toFixed(2)}` : undefined}
+                localization={inspection.visionAnalysis?.localization}
+                active={hasAnomaly}
               />
             </div>
 
             <div className="detail-meta-line">
               <span>분석 ID: {inspection.id}</span>
               <span>작업자: {inspection.operatorName}</span>
+              <span>이상 점수: {formatScore(inspection.visionAnalysis?.anomalyScore)}</span>
+              <span>Threshold: {formatScore(inspection.visionAnalysis?.threshold?.image)}</span>
             </div>
           </section>
 
@@ -368,17 +375,22 @@ function SummaryBox({ label, value, tone = "neutral" }: { label: string; value: 
   );
 }
 
-function InspectionImage({ title, src, marker }: { title: string; src: string; marker?: string }) {
+function InspectionImage({
+  title,
+  src,
+  localization,
+  active = false
+}: {
+  title: string;
+  src: string;
+  localization?: VisionLocalization | null;
+  active?: boolean;
+}) {
   return (
     <figure className="detail-image-box">
       <figcaption><ImageIcon size={14} /> {title}</figcaption>
       <div>
-        <img src={src} alt={title} />
-        {marker ? (
-          <span className="detail-detection-marker">
-            <em>{marker}</em>
-          </span>
-        ) : null}
+        <LocalizationOverlay src={src} alt={title} localization={localization} active={active && Boolean(localization)} />
       </div>
     </figure>
   );
@@ -430,10 +442,34 @@ function riskFor(inspection: InspectionDetail): { label: string; tone: "red" | "
   if (inspection.status === "action_required" || (inspection.result === "defective" && inspection.confidence >= 0.9)) {
     return { label: "High Risk", tone: "red" };
   }
-  if (inspection.result === "defective") {
+  if (inspection.result === "defective" || inspection.result === "suspicious") {
     return { label: "Medium Risk", tone: "amber" };
   }
   return { label: "Low Risk", tone: "green" };
+}
+
+function toneForResult(result: InspectionResult): "red" | "green" | "amber" {
+  if (result === "defective") {
+    return "red";
+  }
+  if (result === "suspicious") {
+    return "amber";
+  }
+  return "green";
+}
+
+function toneForStatus(status: string): "red" | "green" | "amber" {
+  if (status === "action_required") {
+    return "red";
+  }
+  if (status === "pending") {
+    return "amber";
+  }
+  return "green";
+}
+
+function formatScore(value: number | undefined) {
+  return Number.isFinite(value) ? Number(value).toFixed(3) : "-";
 }
 
 function formatDateTime(value: string) {

@@ -26,7 +26,7 @@ export function validateInspectionInput({ processId, equipmentId, lotNo }) {
   return { process, selectedEquipment };
 }
 
-export async function analyzeInspection({ fields, imageUrl, image, visionClient }) {
+export async function analyzeInspection({ fields, imageUrl, image, visionClient, store }) {
   const processId = fields.processId?.trim();
   const equipmentId = fields.equipmentId?.trim();
   const lotNo = fields.lotNo?.trim();
@@ -35,7 +35,7 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient 
   const analysis = await visionClient.analyze({ fields, image, process, selectedEquipment });
   const manual = analysis.defectType ? getManualByDefectType(analysis.defectType) : null;
 
-  return {
+  const inspection = {
     id: `insp-${randomUUID().slice(0, 8)}`,
     imageUrl,
     processId,
@@ -48,7 +48,7 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient 
     defectType: analysis.defectType,
     confidence: analysis.confidence,
     modelName: analysis.modelName,
-    status: analysis.result === "defective" ? "action_required" : "closed",
+    status: initialStatusForResult(analysis.result),
     inspectedAt: toKstIsoString(),
     memo,
     visionAnalysis: analysis.raw,
@@ -60,6 +60,8 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient 
         }
       : undefined
   };
+  await persistVisionArtifacts({ inspection, store });
+  return inspection;
 }
 
 export function toListItem(inspection) {
@@ -159,7 +161,9 @@ export function applyFeedback(inspection, feedback) {
       ? "closed"
       : correctedResult === "defective"
         ? "action_required"
-        : "reviewed";
+        : correctedResult === "suspicious"
+          ? "pending"
+          : "reviewed";
   const feedbackEntry = {
     id: `fb-${randomUUID().slice(0, 8)}`,
     correctedResult: feedback.correctedResult,
@@ -262,7 +266,7 @@ function feedbackKey(feedback) {
 
 function statusAfterFeedbackDelete(inspection, feedback) {
   if (!feedback) {
-    return inspection.result === "defective" ? "action_required" : "closed";
+    return initialStatusForResult(inspection.result);
   }
   if (feedback.reinspectionResult === "normal") {
     return "closed";
@@ -275,6 +279,49 @@ function statusAfterFeedbackDelete(inspection, feedback) {
 
 function effectiveStatus(inspection) {
   return inspection.result === "normal" ? "closed" : inspection.status;
+}
+
+function initialStatusForResult(result) {
+  if (result === "defective") {
+    return "action_required";
+  }
+  if (result === "suspicious") {
+    return "pending";
+  }
+  return "closed";
+}
+
+async function persistVisionArtifacts({ inspection, store }) {
+  const localization = inspection.visionAnalysis?.localization;
+  const heatmapBase64 = localization?.heatmapBase64;
+  if (!heatmapBase64 || !store?.saveUpload) {
+    return;
+  }
+
+  const nextLocalization = { ...localization };
+  try {
+    const buffer = decodeBase64Image(heatmapBase64);
+    if (buffer.length > 0) {
+      nextLocalization.heatmapUrl = await store.saveUpload({
+        fileName: `${inspection.id}-patchcore-heatmap.png`,
+        buffer,
+        contentType: "image/png"
+      });
+    }
+  } catch (error) {
+    nextLocalization.heatmapStorageError = error instanceof Error ? error.message : "Heatmap storage failed.";
+  }
+
+  delete nextLocalization.heatmapBase64;
+  inspection.visionAnalysis = {
+    ...inspection.visionAnalysis,
+    localization: nextLocalization
+  };
+}
+
+function decodeBase64Image(value) {
+  const normalized = String(value).replace(/^data:image\/png;base64,/i, "");
+  return Buffer.from(normalized, "base64");
 }
 
 function clampNumber(value, min, max) {

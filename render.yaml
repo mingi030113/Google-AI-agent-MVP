@@ -23,6 +23,8 @@ services:
         value: manual-files
       - key: VISION_DRIVER
         value: gemini
+      - key: PATCHCORE_MODEL_SERVICE_URL
+        value: http://127.0.0.1:8000
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_VISION_MODEL

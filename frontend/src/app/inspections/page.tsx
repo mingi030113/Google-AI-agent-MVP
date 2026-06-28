@@ -170,6 +170,7 @@ export default function InspectionsPage() {
             <select value={filters.result} onChange={(event) => updateFilter("result", event.target.value)}>
               <option value="">전체</option>
               <option value="normal">정상</option>
+              <option value="suspicious">의심</option>
               <option value="defective">불량</option>
             </select>
           </HistoryField>
@@ -338,6 +339,9 @@ function ChecklistProgress({ progress }: { progress?: { completed: number; total
 function riskFor(result: string, confidence: number) {
   if (result === "normal") {
     return "low";
+  }
+  if (result === "suspicious") {
+    return "medium";
   }
   return confidence >= 0.9 ? "high" : "medium";
 }

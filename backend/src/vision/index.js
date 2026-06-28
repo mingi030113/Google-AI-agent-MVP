@@ -1,5 +1,6 @@
 import { GeminiVisionModelClient } from "./gemini-vision-client.js";
 import { LocalVisionModelClient } from "./local-vision-client.js";
+import { PatchCoreVisionModelClient } from "./patchcore-vision-client.js";
 
 export function createVisionModelClient({ env = process.env } = {}) {
   const driver = (env.VISION_DRIVER ?? "local").trim();
@@ -16,6 +17,19 @@ export function createVisionModelClient({ env = process.env } = {}) {
       model: env.GEMINI_VISION_MODEL ?? "gemini-3-flash-preview"
     });
     return new FallbackVisionModelClient({ primary: gemini, fallback: local, kind: "gemini" });
+  }
+
+  if (driver === "patchcore") {
+    const labeler = env.GEMINI_API_KEY
+      ? new GeminiVisionModelClient({
+          apiKey: env.GEMINI_API_KEY,
+          model: env.GEMINI_VISION_MODEL ?? "gemini-3-flash-preview"
+        })
+      : null;
+    return new PatchCoreVisionModelClient({
+      endpoint: env.PATCHCORE_MODEL_SERVICE_URL ?? "http://127.0.0.1:8000",
+      labeler
+    });
   }
 
   throw new Error(`Unsupported VISION_DRIVER: ${driver}`);

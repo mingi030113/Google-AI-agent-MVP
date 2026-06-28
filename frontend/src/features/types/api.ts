@@ -1,5 +1,5 @@
 export type UserRole = "worker" | "quality_manager" | "process_manager" | "admin";
-export type InspectionResult = "normal" | "defective";
+export type InspectionResult = "normal" | "suspicious" | "defective";
 export type InspectionStatus = "pending" | "reviewed" | "action_required" | "closed";
 export type RiskLevel = "low" | "medium" | "high";
 
@@ -33,8 +33,18 @@ export interface InspectionDetail extends InspectionListItem {
   memo?: string;
   visionAnalysis?: {
     driver?: string;
+    result?: InspectionResult;
+    confidence?: number;
+    anomalyScore?: number;
+    threshold?: VisionThreshold;
+    decisionMargin?: number;
+    localization?: VisionLocalization | null;
+    patchcoreModel?: PatchCoreModel;
+    labelerModel?: LabelerModel | null;
+    defectTypeCandidate?: string | null;
     reason?: string;
     fallback?: boolean;
+    fallbackUsed?: boolean;
     primaryModel?: string;
     fallbackModel?: string;
     signalMatched?: string;
@@ -44,6 +54,48 @@ export interface InspectionDetail extends InspectionListItem {
   feedback?: InspectionFeedback;
   feedbackHistory?: InspectionFeedback[];
   agentGuidance?: AgentGuidance;
+}
+
+export interface VisionThreshold {
+  image: number;
+  pixel: number;
+  method: string;
+}
+
+export interface PatchCoreModel {
+  name: string;
+  version: string;
+  assetKey: string;
+  backbone?: string;
+  layers?: string[];
+  coresetSamplingRatio?: number;
+}
+
+export interface LabelerModel {
+  name: string;
+  defectTypeCandidate: string | null;
+  confidence: number;
+  reason?: string;
+  error?: string;
+  defectScores?: Record<string, number>;
+}
+
+export interface VisionLocalization {
+  heatmapBase64?: string | null;
+  heatmapUrl?: string | null;
+  maskUrl?: string | null;
+  boxes: VisionBox[];
+  imageSize?: { width: number; height: number } | null;
+  modelInputSize?: { width: number; height: number } | null;
+}
+
+export interface VisionBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  score: number;
+  coordinateSpace: "original";
 }
 
 export interface InspectionFeedback {

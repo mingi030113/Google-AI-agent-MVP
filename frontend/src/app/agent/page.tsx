@@ -236,15 +236,15 @@ export default function AgentPage() {
                   </div>
                   <div className="agent-image-preview">
                     <img src={uploadBase(inspection.imageUrl)} alt="검사 이미지" />
-                    {inspection.result === "defective" ? (
+                    {inspection.result !== "normal" ? (
                       <span>
                         <em>{inspection.defectType ?? "defect"} {inspection.confidence.toFixed(2)}</em>
                       </span>
                     ) : null}
                   </div>
                   <div className="agent-context-summary">
-                    <span className={`agent-risk ${inspection.result === "defective" ? "medium" : "low"}`}>
-                      {inspection.result === "defective" ? "불량" : "정상"}
+                    <span className={`agent-risk ${inspection.result === "normal" ? "low" : "medium"}`}>
+                      {resultLabel(inspection.result)}
                     </span>
                     <span className={`agent-risk ${risk.className}`}>{risk.label}</span>
                     <span className="agent-status">{statusLabel(inspection.status)}</span>
@@ -255,7 +255,7 @@ export default function AgentPage() {
                     <div><dt>설비</dt><dd>{inspection.equipmentName}</dd></div>
                     <div><dt>공정</dt><dd>{inspection.processName}</dd></div>
                     <div><dt>불량 유형</dt><dd>{inspection.defectType ?? "-"}</dd></div>
-                    <div><dt>판정 결과</dt><dd><span className={`agent-risk ${inspection.result === "defective" ? "medium" : "low"}`}>{inspection.result === "defective" ? "불량" : "정상"}</span></dd></div>
+                    <div><dt>판정 결과</dt><dd><span className={`agent-risk ${inspection.result === "normal" ? "low" : "medium"}`}>{resultLabel(inspection.result)}</span></dd></div>
                     <div><dt>위험도</dt><dd><span className={`agent-risk ${risk.className}`}>{risk.label}</span></dd></div>
                     <div><dt>조치 상태</dt><dd><span className="agent-status">{statusLabel(inspection.status)}</span></dd></div>
                   </dl>
@@ -667,10 +667,18 @@ function riskFor(inspection: InspectionDetail) {
   if (inspection.status === "action_required" || (inspection.result === "defective" && inspection.confidence >= 0.9)) {
     return { label: "High", className: "high" };
   }
-  if (inspection.result === "defective") {
+  if (inspection.result === "defective" || inspection.result === "suspicious") {
     return { label: "Medium", className: "medium" };
   }
   return { label: "Low", className: "low" };
+}
+
+function resultLabel(result: string) {
+  return {
+    normal: "정상",
+    suspicious: "의심",
+    defective: "불량"
+  }[result] ?? result;
 }
 
 function statusLabel(status: string) {

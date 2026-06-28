@@ -28,7 +28,7 @@ export async function getInspectionUseCase({ store, inspectionId }) {
 }
 
 export async function analyzeInspectionUseCase({ store, visionClient, fields, imageUrl, image }) {
-  const inspection = await analyzeInspection({ fields, imageUrl, image, visionClient });
+  const inspection = await analyzeInspection({ fields, imageUrl, image, visionClient, store });
   await store.addInspection(inspection);
   return inspection;
 }

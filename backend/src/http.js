@@ -48,10 +48,16 @@ export function sendError(response, error) {
   if (statusCode === 500) {
     console.error("Unhandled backend error:", error);
   }
+  const message = statusCode === 500 ? "Internal server error." : error.message;
+  const code = error.code ?? statusCode;
   sendJson(response, statusCode, {
+    status: "error",
+    code,
+    message,
+    fallbackUsed: error.fallbackUsed,
     error: {
-      message: statusCode === 500 ? "Internal server error." : error.message,
-      code: error.code ?? statusCode
+      message,
+      code
     }
   });
 }

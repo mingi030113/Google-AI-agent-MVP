@@ -32,6 +32,30 @@ export class GeminiVisionModelClient {
     const parsed = parseJsonObject(text);
     return normalizeGeminiResult(parsed, { payload, text, modelName: this.modelName });
   }
+
+  async labelDefectType({ image, fields, process, selectedEquipment, patchcore }) {
+    if (!this.apiKey) {
+      throw new Error("GEMINI_API_KEY is required for Gemini defect type labeling.");
+    }
+
+    const response = await fetch(
+      `${this.endpoint}/models/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildLabelRequest({ image, fields, process, selectedEquipment, patchcore }))
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Gemini defect labeler request failed: ${response.status} ${await response.text()}`);
+    }
+
+    const payload = await response.json();
+    const text = extractText(payload);
+    const parsed = parseJsonObject(text);
+    return normalizeGeminiLabel(parsed, { payload, text, modelName: this.modelName });
+  }
 }
 
 function buildRequest({ image, fields, process, selectedEquipment }) {
@@ -59,6 +83,46 @@ function buildRequest({ image, fields, process, selectedEquipment }) {
               "Use null defectType when result is normal.",
               "defectScores must estimate the relative likelihood for each allowed defect type from 0.0 to 1.0.",
               "If uncertain, choose the closest allowed defectType and lower confidence.",
+              `Process: ${process.name}`,
+              `Equipment: ${selectedEquipment.name}`,
+              `LOT: ${fields.lotNo?.trim() ?? ""}`,
+              `Operator memo: ${fields.memo?.trim() ?? ""}`
+            ].join("\n")
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function buildLabelRequest({ image, fields, process, selectedEquipment, patchcore }) {
+  return {
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json"
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            inlineData: {
+              mimeType: supportedMimeType(image.contentType),
+              data: image.buffer.toString("base64")
+            }
+          },
+          {
+            text: [
+              "You are a manufacturing visual defect labeler.",
+              "PatchCore already made the final normal/suspicious/defective decision. Do not override it.",
+              "Only suggest the closest defect type for operator triage.",
+              "Return only valid JSON with this exact shape:",
+              "{\"defectTypeCandidate\":\"scratch|contamination|dent|crack|null\",\"confidence\":0.0,\"defectScores\":{\"scratch\":0.0,\"contamination\":0.0,\"dent\":0.0,\"crack\":0.0},\"reason\":\"short reason\"}",
+              "Use null only when no defect type can be inferred.",
+              `PatchCore result: ${patchcore.result}`,
+              `PatchCore anomalyScore: ${patchcore.anomalyScore}`,
+              `PatchCore threshold.image: ${patchcore.threshold?.image}`,
+              `PatchCore boxes: ${JSON.stringify(patchcore.localization?.boxes ?? [])}`,
               `Process: ${process.name}`,
               `Equipment: ${selectedEquipment.name}`,
               `LOT: ${fields.lotNo?.trim() ?? ""}`,
@@ -116,6 +180,31 @@ function normalizeGeminiResult(parsed, { payload, text, modelName }) {
       driver: "gemini",
       reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
       defectScores,
+      text,
+      usageMetadata: payload.usageMetadata
+    }
+  };
+}
+
+function normalizeGeminiLabel(parsed, { payload, text, modelName }) {
+  const candidate = ALLOWED_DEFECT_TYPES.has(parsed.defectTypeCandidate)
+    ? parsed.defectTypeCandidate
+    : null;
+  const confidence = clampConfidence(Number(parsed.confidence));
+  const defectScores = normalizeDefectScores(parsed.defectScores, {
+    defectType: candidate,
+    confidence,
+    result: candidate ? "defective" : "normal"
+  });
+
+  return {
+    defectTypeCandidate: candidate,
+    confidence,
+    modelName,
+    reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+    defectScores,
+    raw: {
+      driver: "gemini-labeler",
       text,
       usageMetadata: payload.usageMetadata
     }
