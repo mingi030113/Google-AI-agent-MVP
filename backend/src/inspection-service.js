@@ -293,26 +293,39 @@ function initialStatusForResult(result) {
 
 async function persistVisionArtifacts({ inspection, store }) {
   const localization = inspection.visionAnalysis?.localization;
-  const heatmapBase64 = localization?.heatmapBase64;
-  if (!heatmapBase64 || !store?.saveUpload) {
+  if (!localization || !store?.saveUpload) {
     return;
   }
 
   const nextLocalization = { ...localization };
-  try {
-    const buffer = decodeBase64Image(heatmapBase64);
-    if (buffer.length > 0) {
-      nextLocalization.heatmapUrl = await store.saveUpload({
-        fileName: `${inspection.id}-patchcore-heatmap.png`,
-        buffer,
-        contentType: "image/png"
-      });
+  nextLocalization.boxes = [];
+
+  const artifacts = [
+    { base64Key: "heatmapBase64", urlKey: "heatmapUrl", suffix: "patchcore-heatmap" },
+    { base64Key: "heatmapFullBase64", urlKey: "heatmapFullUrl", suffix: "patchcore-heatmap-full" },
+    { base64Key: "heatmapFocusBase64", urlKey: "heatmapFocusUrl", suffix: "patchcore-heatmap-focus" }
+  ];
+
+  for (const artifact of artifacts) {
+    const value = nextLocalization[artifact.base64Key];
+    if (!value) {
+      continue;
     }
-  } catch (error) {
-    nextLocalization.heatmapStorageError = error instanceof Error ? error.message : "Heatmap storage failed.";
+    try {
+      const buffer = decodeBase64Image(value);
+      if (buffer.length > 0) {
+        nextLocalization[artifact.urlKey] = await store.saveUpload({
+          fileName: `${inspection.id}-${artifact.suffix}.png`,
+          buffer,
+          contentType: "image/png"
+        });
+      }
+    } catch (error) {
+      nextLocalization.heatmapStorageError = error instanceof Error ? error.message : "Heatmap storage failed.";
+    }
+    delete nextLocalization[artifact.base64Key];
   }
 
-  delete nextLocalization.heatmapBase64;
   inspection.visionAnalysis = {
     ...inspection.visionAnalysis,
     localization: nextLocalization

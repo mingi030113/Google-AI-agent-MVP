@@ -189,7 +189,7 @@ describe("vision model clients", () => {
   });
 
   it("stores PatchCore localization and strips heatmap base64 from analyzed payload", async () => {
-    const saved = {};
+    const saved = [];
     const inspection = await analyzeInspection({
       fields: {
         processId: "process-a",
@@ -201,9 +201,7 @@ describe("vision model clients", () => {
       image: { filename: "part.png", contentType: "image/png", buffer: Buffer.from("image") },
       store: {
         saveUpload: async ({ fileName, buffer, contentType }) => {
-          saved.fileName = fileName;
-          saved.buffer = buffer;
-          saved.contentType = contentType;
+          saved.push({ fileName, buffer, contentType });
           return `/uploads/${fileName}`;
         }
       },
@@ -219,6 +217,8 @@ describe("vision model clients", () => {
             threshold: { image: 0.57, pixel: 0.61, method: "val_good_p99" },
             localization: {
               heatmapBase64: Buffer.from("png").toString("base64"),
+              heatmapFullBase64: Buffer.from("full").toString("base64"),
+              heatmapFocusBase64: Buffer.from("focus").toString("base64"),
               boxes: [{ x: 10, y: 12, width: 20, height: 30, score: 0.91, coordinateSpace: "original" }],
               imageSize: { width: 100, height: 80 },
               modelInputSize: { width: 224, height: 224 }
@@ -230,9 +230,14 @@ describe("vision model clients", () => {
 
     assert.equal(inspection.result, "defective");
     assert.equal(inspection.visionAnalysis.localization.heatmapBase64, undefined);
+    assert.equal(inspection.visionAnalysis.localization.heatmapFullBase64, undefined);
+    assert.equal(inspection.visionAnalysis.localization.heatmapFocusBase64, undefined);
     assert.match(inspection.visionAnalysis.localization.heatmapUrl, /^\/uploads\/insp-.+-patchcore-heatmap\.png$/);
-    assert.equal(inspection.visionAnalysis.localization.boxes[0].coordinateSpace, "original");
-    assert.equal(saved.contentType, "image/png");
+    assert.match(inspection.visionAnalysis.localization.heatmapFullUrl, /^\/uploads\/insp-.+-patchcore-heatmap-full\.png$/);
+    assert.match(inspection.visionAnalysis.localization.heatmapFocusUrl, /^\/uploads\/insp-.+-patchcore-heatmap-focus\.png$/);
+    assert.deepEqual(inspection.visionAnalysis.localization.boxes, []);
+    assert.equal(saved.length, 3);
+    assert.ok(saved.every((item) => item.contentType === "image/png"));
   });
 });
 
@@ -264,7 +269,9 @@ describe("patchcore backend API integration", () => {
       assert.equal(payload.inspection.visionAnalysis.anomalyScore, 0.58);
       assert.equal(payload.inspection.visionAnalysis.localization.heatmapBase64, undefined);
       assert.ok(payload.inspection.visionAnalysis.localization.heatmapUrl);
-      assert.equal(payload.inspection.visionAnalysis.localization.boxes[0].coordinateSpace, "original");
+      assert.ok(payload.inspection.visionAnalysis.localization.heatmapFullUrl);
+      assert.ok(payload.inspection.visionAnalysis.localization.heatmapFocusUrl);
+      assert.deepEqual(payload.inspection.visionAnalysis.localization.boxes, []);
     } finally {
       await close(app);
       await modelServer.close();
@@ -319,7 +326,12 @@ function patchcorePayload({ result, anomalyScore }) {
     },
     localization: {
       heatmapBase64: Buffer.from("png").toString("base64"),
+      heatmapFullBase64: Buffer.from("full").toString("base64"),
+      heatmapFocusBase64: Buffer.from("focus").toString("base64"),
       heatmapUrl: null,
+      heatmapFullUrl: null,
+      heatmapFocusUrl: null,
+      heatmapMode: "threshold",
       maskUrl: null,
       boxes: [{ x: 120, y: 88, width: 54, height: 31, score: 0.91, coordinateSpace: "original" }],
       imageSize: { width: 1024, height: 768 },

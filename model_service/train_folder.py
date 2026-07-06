@@ -11,7 +11,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train PatchCore on the project folder dataset layout.")
     parser.add_argument("--asset-key", default="default")
     parser.add_argument("--data-dir", default="./datasets/default")
-    parser.add_argument("--out-dir", default="./artifacts/patchcore/default")
+    parser.add_argument("--out-dir", default="./artifacts/default")
     add_common_args(parser)
     args = parser.parse_args()
 

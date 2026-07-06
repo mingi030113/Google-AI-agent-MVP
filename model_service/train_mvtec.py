@@ -9,7 +9,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train PatchCore on an MVTec AD category.")
     parser.add_argument("--category", default="bottle")
     parser.add_argument("--root", default="./datasets/MVTecAD")
-    parser.add_argument("--out-dir", default="./artifacts/patchcore/bottle")
+    parser.add_argument("--out-dir", default="./artifacts/bottle")
     add_common_args(parser)
     args = parser.parse_args()
 

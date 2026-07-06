@@ -139,7 +139,7 @@ export default function InspectionsPage() {
         <HistoryKpi icon={<FileText size={24} />} tone="blue" label="전체 이력" value={`${summary.total}건`} note="누적 검사 건수" />
         <HistoryKpi icon={<AlertTriangle size={24} />} tone="red" label="조치 필요" value={`${summary.actionRequired}건`} note="즉시 확인 대상" />
         <HistoryKpi icon={<RefreshCcw size={24} />} tone="amber" label="재검사 필요" value={`${summary.pendingReview}건`} note="확인 대기" />
-        <HistoryKpi icon={<ShieldCheck size={24} />} tone="green" label="평균 신뢰도" value={`${summary.averageConfidence.toFixed(1)}%`} note="전체 평균" />
+        <HistoryKpi icon={<ShieldCheck size={24} />} tone="green" label="평균 판정 안정도" value={`${summary.averageConfidence.toFixed(1)}%`} note="전체 평균" />
       </section>
 
       <form className="history-filter-card" onSubmit={search}>
@@ -219,7 +219,7 @@ export default function InspectionsPage() {
                   <th>공정/설비</th>
                   <th>판정</th>
                   <th>불량 유형</th>
-                  <th>신뢰도</th>
+                  <th>판정 안정도</th>
                   <th>위험도</th>
                   <th>상태</th>
                   <th>RAG 체크</th>

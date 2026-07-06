@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $baseUrl = $args[0]
 if (-not $baseUrl) {
@@ -11,10 +11,10 @@ $manuals = @(
     DefectType = "scratch"
     File = "scratch-standard.md"
     Checklist = @(
-      @{ id = "scratch-1"; label = "지그 접촉면 마모 또는 버 발생 여부 확인"; priority = "high" },
-      @{ id = "scratch-2"; label = "이송 레일 금속 칩, 분진, 오염물 제거"; priority = "high" },
-      @{ id = "scratch-3"; label = "작업대와 트레이 청소 후 완료 사진 기록"; priority = "medium" },
-      @{ id = "scratch-4"; label = "동일 LOT 샘플 5개 이상 재검사"; priority = "medium" }
+      @{ id = "scratch-1"; label = "카테고리별 접촉부 확인: capsule feeder/chute, metal_nut fixture/deburring, screw driver bit"; priority = "high" },
+      @{ id = "scratch-2"; label = "금속 칩, burr, 분진, 파손 완충재 제거 또는 교체"; priority = "high" },
+      @{ id = "scratch-3"; label = "원본 이미지의 선 방향과 heatmap 집중 방향을 정상 샘플과 비교"; priority = "medium" },
+      @{ id = "scratch-4"; label = "동일 LOT 샘플 5개 이상 재검사 후 같은 방향 scratch 재발 여부 확인"; priority = "medium" }
     )
   },
   @{
@@ -22,21 +22,21 @@ $manuals = @(
     DefectType = "contamination"
     File = "contamination-standard.md"
     Checklist = @(
-      @{ id = "contamination-1"; label = "세척 노즐 막힘과 분사각 확인"; priority = "high" },
-      @{ id = "contamination-2"; label = "에어 블로워 압력 기록 확인"; priority = "high" },
-      @{ id = "contamination-3"; label = "포장 전 대기 구역과 트레이 청소"; priority = "medium" },
-      @{ id = "contamination-4"; label = "재세척 후 동일 LOT 샘플 5개 이상 재검사"; priority = "medium" }
+      @{ id = "contamination-1"; label = "오염 유형 분류: residue, fiber/thread, oil, glue, metal_contamination, liquid"; priority = "high" },
+      @{ id = "contamination-2"; label = "bottle 세척 노즐/필터/블로워 또는 tile/leather glue-oil 접촉 구간 확인"; priority = "high" },
+      @{ id = "contamination-3"; label = "포장 전 대기 구역, 트레이, 작업대, 금속 칩/섬유 낙진 구간 청소"; priority = "medium" },
+      @{ id = "contamination-4"; label = "재세척 또는 표면 닦음 후 동일 LOT 샘플 5개 이상 재검사"; priority = "medium" }
     )
   },
   @{
-    Title = "찍힘 불량 조치 기준서"
+    Title = "찍힘/변형 불량 조치 기준서"
     DefectType = "dent"
     File = "dent-standard.md"
     Checklist = @(
-      @{ id = "dent-1"; label = "적재 높이와 제품 간 간격 기준 준수 확인"; priority = "high" },
-      @{ id = "dent-2"; label = "이송 속도 로그와 급정지 알람 확인"; priority = "high" },
-      @{ id = "dent-3"; label = "트레이, 완충재, 보관 랙 손상 여부 확인"; priority = "medium" },
-      @{ id = "dent-4"; label = "기능면 찍힘 의심품 품질관리자 승인 전 격리"; priority = "high" }
+      @{ id = "dent-1"; label = "정상 샘플 외곽선과 비교해 squeeze, bent, bent_lead, squeezed_teeth 여부 기록"; priority = "high" },
+      @{ id = "dent-2"; label = "적재 높이, press/fixture 압력, tray 완충재, guide 간격 확인"; priority = "high" },
+      @{ id = "dent-3"; label = "이송 속도 로그, 급정지/충돌 알람, pick-and-place 위치 이력 확인"; priority = "medium" },
+      @{ id = "dent-4"; label = "기능면, 리드, 체결면, teeth 변형 의심품은 승인 전 격리"; priority = "high" }
     )
   },
   @{
@@ -44,11 +44,10 @@ $manuals = @(
     DefectType = "crack"
     File = "crack-standard.md"
     Checklist = @(
-      @{ id = "crack-1"; label = "기능부 또는 관통 균열 확인 시 설비 즉시 정지"; priority = "high" },
-      @{ id = "crack-2"; label = "가압 조건 이탈 알람과 설정값 변경 이력 확인"; priority = "high" },
-      @{ id = "crack-3"; label = "냉각 시간 로그와 배출 온도 확인"; priority = "high" },
-      @{ id = "crack-4"; label = "원자재 LOT 변경 시점과 불량 발생 시점 비교"; priority = "medium" },
-      @{ id = "crack-5"; label = "시험 생산품 5개 이상 정상 확인 후 생산 재개 승인"; priority = "high" }
+      @{ id = "crack-1"; label = "기능부 또는 관통 균열 의심 시 설비 즉시 정지"; priority = "high" },
+      @{ id = "crack-2"; label = "tile/capsule/bottle/hazelnut/pill 원본 이미지에서 branching, 파단 경계, broken 여부 확인"; priority = "high" },
+      @{ id = "crack-3"; label = "성형/가압 조건, 냉각/건조 시간, 원자재 LOT 변경 이력 확인"; priority = "high" },
+      @{ id = "crack-4"; label = "시험 생산품 5개 이상 정상 확인 후 생산 재개 승인"; priority = "high" }
     )
   }
 )
@@ -56,13 +55,33 @@ $manuals = @(
 foreach ($manual in $manuals) {
   $path = Join-Path $PSScriptRoot $manual.File
   $checklistJson = $manual.Checklist | ConvertTo-Json -Compress -Depth 4
+  $checklistPath = [System.IO.Path]::GetTempFileName()
 
   Write-Host "Uploading $($manual.Title)..."
-  curl.exe -s `
-    -F "title=$($manual.Title)" `
-    -F "defectType=$($manual.DefectType)" `
-    -F "checklist=$checklistJson" `
-    -F "file=@$path;type=text/markdown" `
-    "$baseUrl/api/manuals"
+  try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($checklistPath, $checklistJson, $utf8NoBom)
+
+    $response = curl.exe -s `
+      -F "title=$($manual.Title)" `
+      -F "defectType=$($manual.DefectType)" `
+      -F "checklist=<$checklistPath;type=application/json" `
+      -F "file=@$path;type=text/markdown" `
+      "$baseUrl/api/manuals"
+
+    try {
+      $result = $response | ConvertFrom-Json
+      Write-Host "Uploaded $($result.manual.id) ($(@($result.chunks).Count) chunks)"
+    } catch {
+      Write-Host $response
+      throw
+    }
+  } finally {
+    if (Test-Path -LiteralPath $checklistPath) {
+      Remove-Item -LiteralPath $checklistPath -Force
+    }
+  }
   Write-Host ""
 }
+
+

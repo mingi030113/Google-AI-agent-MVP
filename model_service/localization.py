@@ -38,15 +38,22 @@ def build_localization(
         center_crop=center_crop,
     )
     map_2d = normalize_anomaly_map(anomaly_map, center_crop)
-    mask = map_2d >= float(pixel_threshold)
-    boxes = boxes_from_mask(mask, map_2d, spec)
-    heatmap_base64 = heatmap_png_base64(map_2d, spec)
+    heatmap_base64 = heatmap_png_base64(map_2d, spec, mode="threshold", pixel_threshold=pixel_threshold)
+    heatmap_full_base64 = heatmap_png_base64(map_2d, spec, mode="full")
+    heatmap_focus_base64 = heatmap_png_base64(map_2d, spec, mode="focus", pixel_threshold=pixel_threshold)
 
     return {
         "heatmapBase64": heatmap_base64,
+        "heatmapFullBase64": heatmap_full_base64,
+        "heatmapFocusBase64": heatmap_focus_base64,
         "heatmapUrl": None,
+        "heatmapFullUrl": None,
+        "heatmapFocusUrl": None,
+        "heatmapMode": "threshold",
         "maskUrl": None,
-        "boxes": boxes,
+        # Bounding boxes are intentionally withheld until pixel-threshold
+        # calibration is validated against the heatmap coordinate space.
+        "boxes": [],
         "imageSize": {"width": original_w, "height": original_h},
         "modelInputSize": {"width": center_crop[0], "height": center_crop[1]},
     }
@@ -108,17 +115,13 @@ def crop_box_to_original(x: int, y: int, width: int, height: int, spec: Transfor
     return {"x": left, "y": top, "width": max(right - left, 0), "height": max(bottom - top, 0)}
 
 
-def heatmap_png_base64(map_2d: np.ndarray, spec: TransformSpec) -> str:
-    normalized = normalize_to_uint8(map_2d)
-    try:
-        import cv2  # type: ignore
-
-        colored = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
-        colored = cv2.cvtColor(colored, cv2.COLOR_BGR2RGBA)
-    except Exception:
-        red = normalized
-        alpha = np.clip(normalized.astype(np.float32) * 0.72, 0, 255).astype(np.uint8)
-        colored = np.stack([red, np.zeros_like(red), 255 - red, alpha], axis=-1)
+def heatmap_png_base64(map_2d: np.ndarray, spec: TransformSpec, *, mode: str = "threshold", pixel_threshold: float | None = None) -> str:
+    if mode == "full":
+        colored = full_distribution_colormap(map_2d)
+    elif mode == "focus":
+        colored = threshold_colormap(map_2d, pixel_threshold, alpha=focus_alpha(map_2d, pixel_threshold))
+    else:
+        colored = threshold_colormap(map_2d, pixel_threshold)
 
     crop_w, crop_h = spec.center_crop
     resized_w, resized_h = spec.image_size
@@ -131,6 +134,63 @@ def heatmap_png_base64(map_2d: np.ndarray, spec: TransformSpec) -> str:
     buffer = BytesIO()
     canvas.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def full_distribution_colormap(map_2d: np.ndarray) -> np.ndarray:
+    normalized = normalize_to_uint8(map_2d)
+    try:
+        import cv2  # type: ignore
+
+        colored = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
+        return cv2.cvtColor(colored, cv2.COLOR_BGR2RGBA)
+    except Exception:
+        red = normalized
+        alpha = np.full_like(normalized, 255, dtype=np.uint8)
+        return np.stack([red, np.zeros_like(red), 255 - red, alpha], axis=-1)
+
+
+def threshold_colormap(map_2d: np.ndarray, pixel_threshold: float | None, *, alpha: np.ndarray | None = None) -> np.ndarray:
+    threshold = float(pixel_threshold) if pixel_threshold is not None and np.isfinite(pixel_threshold) and pixel_threshold > 0 else None
+    if threshold is None:
+        ratio = normalize_to_uint8(map_2d).astype(np.float32) / 255.0
+    else:
+        ratio = np.clip(map_2d.astype(np.float32) / threshold, 0, 1.6) / 1.6
+
+    stops = [
+        (0.00, np.array([37, 99, 235], dtype=np.float32)),
+        (0.34, np.array([20, 184, 166], dtype=np.float32)),
+        (0.62, np.array([250, 204, 21], dtype=np.float32)),
+        (0.78, np.array([249, 115, 22], dtype=np.float32)),
+        (1.00, np.array([220, 38, 38], dtype=np.float32)),
+    ]
+    rgb = interpolate_stops(ratio, stops)
+    alpha_channel = alpha if alpha is not None else np.full(ratio.shape, 255, dtype=np.uint8)
+    return np.dstack([rgb, alpha_channel]).astype(np.uint8)
+
+
+def focus_alpha(map_2d: np.ndarray, pixel_threshold: float | None) -> np.ndarray:
+    scores = map_2d.astype(np.float32)
+    max_value = float(np.max(scores))
+    threshold = float(pixel_threshold) if pixel_threshold is not None and np.isfinite(pixel_threshold) and pixel_threshold > 0 else np.nan
+    if not np.isfinite(max_value) or not np.isfinite(threshold) or max_value <= threshold:
+        return np.zeros(scores.shape, dtype=np.uint8)
+
+    scaled = np.clip((scores - threshold) / (max_value - threshold), 0, 1)
+    return (np.power(scaled, 0.75) * 230).astype(np.uint8)
+
+
+def interpolate_stops(values: np.ndarray, stops: list[tuple[float, np.ndarray]]) -> np.ndarray:
+    result = np.zeros((*values.shape, 3), dtype=np.float32)
+    for index, (start_pos, start_color) in enumerate(stops[:-1]):
+        end_pos, end_color = stops[index + 1]
+        mask = (values >= start_pos) & (values <= end_pos)
+        if not np.any(mask):
+            continue
+        local = ((values[mask] - start_pos) / (end_pos - start_pos)).reshape(-1, 1)
+        result[mask] = start_color + (end_color - start_color) * local
+    result[values < stops[0][0]] = stops[0][1]
+    result[values > stops[-1][0]] = stops[-1][1]
+    return np.clip(result, 0, 255).astype(np.uint8)
 
 
 def connected_component_boxes(mask: np.ndarray, min_area: float) -> list[tuple[int, int, int, int]]:

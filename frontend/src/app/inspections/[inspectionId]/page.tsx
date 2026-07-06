@@ -150,12 +150,12 @@ export default function InspectionDetailPage() {
   }
 
   const risk = riskFor(inspection);
-  const hasAnomaly = inspection.result !== "normal";
   const defectCandidate = inspection.defectType ?? inspection.visionAnalysis?.defectTypeCandidate ?? null;
   const feedbackHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
   const sources = inspection.agentGuidance?.sources ?? [];
   const checklist = inspection.agentGuidance?.checklist ?? [];
   const checklistProgress = progressFor(checklist);
+  const anomalyEvidence = buildAnomalyEvidence(inspection);
 
   return (
     <AppShell>
@@ -194,8 +194,8 @@ export default function InspectionDetailPage() {
 
             <div className="detail-summary-grid">
               <SummaryBox label="최종 판정" value={resultLabels[inspection.result]} tone={toneForResult(inspection.result)} />
-              <SummaryBox label="불량 유형" value={defectCandidate ?? "-"} />
-              <SummaryBox label="신뢰도" value={`${Math.round(inspection.confidence * 100)}%`} />
+              <SummaryBox label="결함 유형 추정" value={defectCandidate ?? "-"} />
+              <SummaryBox label="판정 안정도" value={`${stabilityLabel(inspection.confidence)} (${Math.round(inspection.confidence * 100)}%)`} />
               <SummaryBox label="위험도" value={risk.label} tone={risk.tone} />
               <SummaryBox label="상태" value={statusLabels[inspection.status]} tone={toneForStatus(inspection.status)} />
             </div>
@@ -206,7 +206,7 @@ export default function InspectionDetailPage() {
                 title="AI 검출 결과"
                 src={uploadBase(inspection.imageUrl)}
                 localization={inspection.visionAnalysis?.localization}
-                active={hasAnomaly}
+                active={Boolean(inspection.visionAnalysis?.localization)}
               />
             </div>
 
@@ -215,6 +215,8 @@ export default function InspectionDetailPage() {
               <span>작업자: {inspection.operatorName}</span>
               <span>이상 점수: {formatScore(inspection.visionAnalysis?.anomalyScore)}</span>
               <span>Threshold: {formatScore(inspection.visionAnalysis?.threshold?.image)}</span>
+              {anomalyEvidence ? <span>차이: {anomalyEvidence.margin}</span> : null}
+              {anomalyEvidence ? <span>기준 대비: {anomalyEvidence.ratio}</span> : null}
             </div>
           </section>
 
@@ -468,8 +470,36 @@ function toneForStatus(status: string): "red" | "green" | "amber" {
   return "green";
 }
 
+function buildAnomalyEvidence(inspection: InspectionDetail) {
+  const score = inspection.visionAnalysis?.anomalyScore;
+  const threshold = inspection.visionAnalysis?.threshold?.image;
+
+  if (typeof score !== "number" || typeof threshold !== "number" || !Number.isFinite(score) || !Number.isFinite(threshold) || threshold <= 0) {
+    return null;
+  }
+
+  return {
+    margin: formatSignedScore(score - threshold),
+    ratio: `${(score / threshold).toFixed(2)}x`
+  };
+}
+
+function stabilityLabel(confidence: number) {
+  if (confidence >= 0.9) {
+    return "높음";
+  }
+  if (confidence >= 0.6) {
+    return "보통";
+  }
+  return "낮음";
+}
+
 function formatScore(value: number | undefined) {
   return Number.isFinite(value) ? Number(value).toFixed(3) : "-";
+}
+
+function formatSignedScore(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(3)}`;
 }
 
 function formatDateTime(value: string) {

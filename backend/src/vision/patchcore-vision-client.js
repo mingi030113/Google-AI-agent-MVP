@@ -134,27 +134,16 @@ function normalizeLocalization(localization) {
 
   return {
     heatmapBase64: typeof localization.heatmapBase64 === "string" ? localization.heatmapBase64 : null,
+    heatmapFullBase64: typeof localization.heatmapFullBase64 === "string" ? localization.heatmapFullBase64 : null,
+    heatmapFocusBase64: typeof localization.heatmapFocusBase64 === "string" ? localization.heatmapFocusBase64 : null,
     heatmapUrl: typeof localization.heatmapUrl === "string" ? localization.heatmapUrl : null,
+    heatmapFullUrl: typeof localization.heatmapFullUrl === "string" ? localization.heatmapFullUrl : null,
+    heatmapFocusUrl: typeof localization.heatmapFocusUrl === "string" ? localization.heatmapFocusUrl : null,
+    heatmapMode: ["threshold", "full", "focus"].includes(localization.heatmapMode) ? localization.heatmapMode : "threshold",
     maskUrl: typeof localization.maskUrl === "string" ? localization.maskUrl : null,
-    boxes: Array.isArray(localization.boxes)
-      ? localization.boxes.map(normalizeBox).filter(Boolean)
-      : [],
+    boxes: [],
     imageSize: normalizeSize(localization.imageSize),
     modelInputSize: normalizeSize(localization.modelInputSize)
-  };
-}
-
-function normalizeBox(box) {
-  if (!box || typeof box !== "object") {
-    return null;
-  }
-  return {
-    x: Math.max(0, Math.round(numberOr(box.x, 0))),
-    y: Math.max(0, Math.round(numberOr(box.y, 0))),
-    width: Math.max(0, Math.round(numberOr(box.width, 0))),
-    height: Math.max(0, Math.round(numberOr(box.height, 0))),
-    score: clamp01(box.score),
-    coordinateSpace: "original"
   };
 }
 

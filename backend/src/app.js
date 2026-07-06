@@ -329,6 +329,8 @@ async function checkGeminiConfig(env) {
     return {
       ok: false,
       hasApiKey: false,
+      agentAnswerDriver: env.AGENT_ANSWER_DRIVER || null,
+      effectiveAgentAnswerDriver: effectiveAgentAnswerDriver(env),
       models: []
     };
   }
@@ -341,11 +343,21 @@ async function checkGeminiConfig(env) {
   return {
     ok: results.every((result) => result.ok),
     hasApiKey: true,
+    agentAnswerDriver: env.AGENT_ANSWER_DRIVER || null,
+    effectiveAgentAnswerDriver: effectiveAgentAnswerDriver(env),
     visionModel: env.GEMINI_VISION_MODEL || null,
     agentModel: env.GEMINI_AGENT_MODEL || null,
     reportModel: env.GEMINI_REPORT_MODEL || null,
     models: results
   };
+}
+
+function effectiveAgentAnswerDriver(env) {
+  const configured = String(env.AGENT_ANSWER_DRIVER ?? "").trim().toLowerCase();
+  if (configured === "local-only" || env.AGENT_ANSWER_FORCE_LOCAL === "true") {
+    return "local";
+  }
+  return env.GEMINI_API_KEY?.trim() ? "gemini" : "local";
 }
 
 async function checkGeminiModel({ apiKey, model }) {

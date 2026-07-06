@@ -12,7 +12,7 @@ from .inference import PatchCorePredictor
 
 
 def create_app(runner: Any | None = None) -> FastAPI:
-    artifact_dir = os.getenv("PATCHCORE_ARTIFACT_DIR", "./artifacts/patchcore/bottle")
+    artifact_dir = os.getenv("PATCHCORE_ARTIFACT_DIR", "./artifacts/bottle")
     gray_zone_ratio = float(os.getenv("PATCHCORE_GRAY_ZONE_RATIO", "0.08"))
     predictor = runner or PatchCorePredictor(artifact_dir, gray_zone_ratio=gray_zone_ratio)
 

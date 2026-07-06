@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { GeminiAgentAnswerClient } from "../src/agent/gemini-answer-client.js";
+import { answerAgentQuestion } from "../src/agent-service.js";
 
 describe("Gemini Agent answer client", () => {
   it("parses Gemini JSON answers into the Agent response shape", async () => {
@@ -45,3 +46,92 @@ describe("Gemini Agent answer client", () => {
     }
   });
 });
+
+describe("Agent answer driver selection", () => {
+  it("uses Gemini first when an API key is configured", async () => {
+    const originalFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = async () => {
+      called = true;
+      return new Response(JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{
+              text: JSON.stringify({
+                answer: "Gemini 기반 조치 답변입니다.",
+                checklist: [{ label: "Gemini 조치 항목 확인", priority: "high" }]
+              })
+            }]
+          }
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    };
+
+    try {
+      const result = await answerAgentQuestion(
+        { question: "scratch 조치 순서 알려줘", defectType: "scratch" },
+        fakeRagStore(),
+        {
+          env: {
+            GEMINI_API_KEY: "test-key",
+            GEMINI_AGENT_MODEL: "gemini-3-flash-preview",
+            AGENT_ANSWER_DRIVER: "local"
+          }
+        }
+      );
+
+      assert.equal(called, true);
+      assert.equal(result.answerDriver, "gemini");
+      assert.equal(result.answerModel, "gemini-3-flash-preview");
+      assert.equal(result.checklist[0].id, "gemini-1");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("keeps local RAG when Agent local mode is explicitly forced", async () => {
+    const originalFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    };
+
+    try {
+      const result = await answerAgentQuestion(
+        { question: "scratch 조치 순서 알려줘", defectType: "scratch" },
+        fakeRagStore(),
+        {
+          env: {
+            GEMINI_API_KEY: "test-key",
+            AGENT_ANSWER_FORCE_LOCAL: "true",
+            AGENT_ANSWER_DRIVER: "gemini"
+          }
+        }
+      );
+
+      assert.equal(called, false);
+      assert.equal(result.answerDriver, "local");
+      assert.match(result.answer, /스크래치/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+function fakeRagStore() {
+  return {
+    getInspection: async () => null,
+    listInspections: async () => [],
+    searchManualChunks: async () => [{
+      manualId: "manual-scratch",
+      chunkIndex: 0,
+      content: "스크래치 불량은 설비 접촉면을 확인하고 동일 LOT 재검사를 수행한다.",
+      score: 0.92,
+      metadata: { title: "스크래치 불량 조치 기준서", defectType: "scratch" }
+    }]
+  };
+}

@@ -95,6 +95,7 @@ export default function NewInspectionPage() {
   const requestReady = Boolean(image && form.processId && form.equipmentId && form.lotNo);
   const hasAnomaly = inspection ? inspection.result !== "normal" : false;
   const DecisionIcon = hasAnomaly ? AlertTriangle : ShieldCheck;
+  const progressPercent = inspection ? 100 : loading ? stageProgress(stage) : 0;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -192,7 +193,7 @@ export default function NewInspectionPage() {
                 src={preview}
                 detected={hasAnomaly}
                 localization={inspection?.visionAnalysis?.localization}
-                status={inspection ? hasAnomaly ? "Localization loaded" : "No defect" : undefined}
+                status={inspection ? inspection.visionAnalysis?.localization ? "Heatmap loaded" : hasAnomaly ? "Localization loaded" : "No defect" : undefined}
                 emptyText="분석 실행 시 검출 결과가 표시됩니다."
               />
             </div>
@@ -235,7 +236,7 @@ export default function NewInspectionPage() {
         </form>
 
         <section className="inspection-result-stack">
-          <div className="panel inspection-stage-card">
+          <div className={`panel inspection-stage-card ${loading ? "running" : inspection ? "complete" : ""}`}>
             <div className="inspection-stage-head">
               <div>
                 <span><Sparkles size={15} /> AI Pipeline</span>
@@ -243,6 +244,9 @@ export default function NewInspectionPage() {
                 <p>이미지를 업로드하고 검사 정보를 입력하면 Vision AI 판정과 RAG 기반 조치 가이드가 생성됩니다.</p>
               </div>
               <strong className={loading ? "active" : inspection ? "complete" : ""}>{loading ? "Running" : inspection ? "Complete" : "Idle"}</strong>
+            </div>
+            <div className={`inspection-progress-track ${loading ? "running" : inspection ? "complete" : ""}`} aria-label="AI 분석 진행률">
+              <span style={{ width: `${progressPercent}%` }} />
             </div>
             <div className="inspection-stage-line">
               {stages.map((item, index) => {
@@ -295,7 +299,7 @@ export default function NewInspectionPage() {
             <div className="inspection-analysis-grid">
               {hasAnomaly ? (
                 <div className="panel inspection-defect-card">
-                  <h2>결함 유형 신뢰도</h2>
+                  <h2>결함 유형 추정</h2>
                   <div className="inspection-defect-list">
                     {defectScores.map((item) => (
                       <div className="inspection-defect-row" key={item.type}>
@@ -318,7 +322,7 @@ export default function NewInspectionPage() {
                   <div>
                     <span>Normal</span>
                     <strong>{confidence}</strong>
-                    <em>판정 신뢰도</em>
+                    <em>판정 안정도</em>
                   </div>
                 </div>
               )}
@@ -391,7 +395,7 @@ function PreviewBox({
       </div>
       <div className={`inspection-preview-image ${detected ? "detected" : ""}`}>
         {src ? (
-          <LocalizationOverlay src={src} alt={title} localization={localization} active={Boolean(detected && localization)} />
+          <LocalizationOverlay src={src} alt={title} localization={localization} active={Boolean(localization)} />
         ) : (
           <span>
             <ImageIcon size={35} />
@@ -476,6 +480,17 @@ function stageClass(current: StageKey, target: StageKey) {
     return "complete";
   }
   return "";
+}
+
+function stageProgress(current: StageKey) {
+  return {
+    ready: 0,
+    upload: 18,
+    vision: 48,
+    rag: 74,
+    done: 100,
+    error: 100
+  }[current];
 }
 
 function buildDefectScores(inspection: InspectionDetail | null) {

@@ -23,6 +23,7 @@ import {
   Wrench
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
+import { LocalizationOverlay } from "@/components/vision/LocalizationOverlay";
 import { client, uploadBase } from "@/features/api/client";
 import type { AskAgentResponse, InspectionDetail, InspectionListItem } from "@/features/types/api";
 
@@ -36,6 +37,12 @@ const quickQuestionTemplates = [
 ];
 
 const agentHandoffKey = "quality-agent-inspection-handoff";
+const defectLabels: Record<string, string> = {
+  scratch: "스크래치",
+  contamination: "오염",
+  dent: "찍힘",
+  crack: "크랙"
+};
 
 type AgentChatEntry = {
   id: string;
@@ -83,6 +90,7 @@ export default function AgentPage() {
   }, []);
 
   const risk = inspection ? riskFor(inspection) : { label: "-", className: "low" };
+  const anomalyEvidence = inspection ? buildAnomalyEvidence(inspection) : null;
   const lastTurn = chatHistory.at(-1);
   const evidenceResponse = answer;
   const sourceTitles = useMemo(() => {
@@ -223,7 +231,7 @@ export default function AgentPage() {
                 <div className="agent-context-placeholder">
                   <FileSearch size={30} />
                   <strong>검사 이력을 선택하면 컨텍스트가 연결됩니다.</strong>
-                  <p>대화를 시작한 뒤 LOT, 공정, 설비, 불량 유형, 신뢰도, 참조 문서가 이 영역에 표시됩니다.</p>
+                  <p>대화를 시작한 뒤 LOT, 공정, 설비, 불량 유형, 판정 근거, 참조 문서가 이 영역에 표시됩니다.</p>
                 </div>
               ) : (
                 <>
@@ -235,26 +243,31 @@ export default function AgentPage() {
                     <button type="button" onClick={clearContext}>선택 해제</button>
                   </div>
                   <div className="agent-image-preview">
-                    <img src={uploadBase(inspection.imageUrl)} alt="검사 이미지" />
+                    <LocalizationOverlay
+                      src={uploadBase(inspection.imageUrl)}
+                      alt="검사 이미지"
+                      localization={inspection.visionAnalysis?.localization}
+                      active={Boolean(inspection.visionAnalysis?.localization)}
+                    />
                     {inspection.result !== "normal" ? (
-                      <span>
-                        <em>{inspection.defectType ?? "defect"} {inspection.confidence.toFixed(2)}</em>
-                      </span>
+                      <em className="agent-image-badge">{defectEstimateLabel(inspection)} · 판정 안정도 {stabilityLabel(inspection.confidence)}</em>
                     ) : null}
                   </div>
-                  <div className="agent-context-summary">
-                    <span className={`agent-risk ${inspection.result === "normal" ? "low" : "medium"}`}>
-                      {resultLabel(inspection.result)}
-                    </span>
-                    <span className={`agent-risk ${risk.className}`}>{risk.label}</span>
-                    <span className="agent-status">{statusLabel(inspection.status)}</span>
-                  </div>
+                  {anomalyEvidence ? (
+                    <div className="agent-anomaly-evidence">
+                      <span>이상 점수 <strong>{anomalyEvidence.score}</strong></span>
+                      <span>Threshold <strong>{anomalyEvidence.threshold}</strong></span>
+                      <span>차이 <strong>{anomalyEvidence.margin}</strong></span>
+                      <span>기준 대비 <strong>{anomalyEvidence.ratio}</strong></span>
+                    </div>
+                  ) : null}
                   <dl className="agent-context-list">
                     <div><dt>LOT 번호</dt><dd>{inspection.lotNo}</dd></div>
                     <div><dt>검사 일시</dt><dd>{formatDateTime(inspection.inspectedAt)}</dd></div>
                     <div><dt>설비</dt><dd>{inspection.equipmentName}</dd></div>
                     <div><dt>공정</dt><dd>{inspection.processName}</dd></div>
                     <div><dt>불량 유형</dt><dd>{inspection.defectType ?? "-"}</dd></div>
+                    <div><dt>판정 안정도</dt><dd>{stabilityLabel(inspection.confidence)} ({Math.round(inspection.confidence * 100)}%)</dd></div>
                     <div><dt>판정 결과</dt><dd><span className={`agent-risk ${inspection.result === "normal" ? "low" : "medium"}`}>{resultLabel(inspection.result)}</span></dd></div>
                     <div><dt>위험도</dt><dd><span className={`agent-risk ${risk.className}`}>{risk.label}</span></dd></div>
                     <div><dt>조치 상태</dt><dd><span className="agent-status">{statusLabel(inspection.status)}</span></dd></div>
@@ -495,8 +508,11 @@ function AgentStructuredAnswer({
   const isTyping = typedAnswer.length < response.answer.length;
   const similarCount = response.similarCases?.length ?? 0;
   const usesGemini = response.answerDriver === "gemini" || response.checklist.some((item) => item.id.startsWith("gemini-"));
+  const isGeminiFallback = response.answerDriver === "gemini-fallback";
   const answerEngineLabel = usesGemini
     ? `Gemini 사용${response.answerModel ? ` · ${response.answerModel}` : ""}`
+    : isGeminiFallback
+      ? `Gemini 실패 · 로컬 RAG${response.answerModel ? ` · ${response.answerModel}` : ""}`
     : "로컬 RAG 사용";
 
   return (
@@ -507,7 +523,7 @@ function AgentStructuredAnswer({
           <strong>AI 판단 결과</strong>
           <p>
             {inspection ? `${inspection.equipmentName} · ${inspection.defectType ?? "검사"} 기준 분석` : "기준서 기반 조치 분석"}
-            <span className={usesGemini ? "agent-engine-badge gemini" : "agent-engine-badge"}>{answerEngineLabel}</span>
+            <span className={usesGemini ? "agent-engine-badge gemini" : isGeminiFallback ? "agent-engine-badge warning" : "agent-engine-badge"}>{answerEngineLabel}</span>
           </p>
         </div>
         <em className={isTyping ? "" : "complete"}>{isTyping ? "응답 생성 중" : "판단 완료"}</em>
@@ -517,7 +533,7 @@ function AgentStructuredAnswer({
         <span><BookOpen size={14} /> 기준서 {response.sources.length}건</span>
         <span><Gauge size={14} /> 유사 이력 {similarCount}건</span>
         <span><ShieldCheck size={14} /> RAG 기반</span>
-        <span className={usesGemini ? "gemini" : ""}><Sparkles size={14} /> {answerEngineLabel}</span>
+        <span className={usesGemini ? "gemini" : isGeminiFallback ? "warning" : ""}><Sparkles size={14} /> {answerEngineLabel}</span>
       </div>
 
       <section className="agent-answer-summary">
@@ -673,6 +689,37 @@ function riskFor(inspection: InspectionDetail) {
   return { label: "Low", className: "low" };
 }
 
+function buildAnomalyEvidence(inspection: InspectionDetail) {
+  const score = inspection.visionAnalysis?.anomalyScore;
+  const threshold = inspection.visionAnalysis?.threshold?.image;
+
+  if (typeof score !== "number" || typeof threshold !== "number" || !Number.isFinite(score) || !Number.isFinite(threshold) || threshold <= 0) {
+    return null;
+  }
+
+  return {
+    score: formatScore(score),
+    threshold: formatScore(threshold),
+    margin: formatSignedScore(score - threshold),
+    ratio: `${(score / threshold).toFixed(2)}x`
+  };
+}
+
+function defectEstimateLabel(inspection: InspectionDetail) {
+  const defectType = inspection.defectType ?? inspection.visionAnalysis?.defectTypeCandidate;
+  return defectType ? `${defectLabels[defectType] ?? defectType} 추정` : "결함 유형 추정";
+}
+
+function stabilityLabel(confidence: number) {
+  if (confidence >= 0.9) {
+    return "높음";
+  }
+  if (confidence >= 0.6) {
+    return "보통";
+  }
+  return "낮음";
+}
+
 function resultLabel(result: string) {
   return {
     normal: "정상",
@@ -792,4 +839,12 @@ function formatTime(value: string) {
 
 function formatDateTime(value: string) {
   return value.slice(0, 16).replace("T", " ");
+}
+
+function formatScore(value: number | undefined) {
+  return Number.isFinite(value) ? Number(value).toFixed(3) : "-";
+}
+
+function formatSignedScore(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(3)}`;
 }

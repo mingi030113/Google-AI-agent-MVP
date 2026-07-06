@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { uploadBase } from "@/features/api/client";
 import type { VisionLocalization } from "@/features/types/api";
 
+type HeatmapMode = "threshold" | "full" | "focus";
+
 type Props = {
   src: string;
   alt: string;
@@ -15,11 +17,17 @@ export function LocalizationOverlay({ src, alt, localization, active = false }: 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const [naturalSize, setNaturalSize] = useState({ width: 4, height: 3 });
+  const [mode, setMode] = useState<HeatmapMode>("threshold");
   const imageSize = localization?.imageSize;
-  const boxes = active ? localization?.boxes ?? [] : [];
-  const heatmapSrc = active ? heatmapSource(localization) : "";
+  const heatmapModes = useMemo(() => availableModes(localization), [localization]);
+  const selectedMode = heatmapModes.some((item) => item.mode === mode) ? mode : "threshold";
+  const heatmapSrc = active ? heatmapSource(localization, selectedMode) : "";
   const imageWidth = imageSize?.width && imageSize.width > 0 ? imageSize.width : naturalSize.width;
   const imageHeight = imageSize?.height && imageSize.height > 0 ? imageSize.height : naturalSize.height;
+
+  useEffect(() => {
+    setMode("threshold");
+  }, [localization]);
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -56,37 +64,77 @@ export function LocalizationOverlay({ src, alt, localization, active = false }: 
             }
           }}
         />
-        {heatmapSrc ? <img className="localization-heatmap" src={heatmapSrc} alt="" aria-hidden="true" /> : null}
-        {boxes.map((box, index) => (
-          <span
-            className="localization-box"
-            key={`${box.x}-${box.y}-${box.width}-${box.height}-${index}`}
-            style={{
-              left: `${(box.x / imageWidth) * 100}%`,
-              top: `${(box.y / imageHeight) * 100}%`,
-              width: `${(box.width / imageWidth) * 100}%`,
-              height: `${(box.height / imageHeight) * 100}%`
-            }}
-          >
-            <em>{Math.round(box.score * 100)}%</em>
-          </span>
-        ))}
+        {heatmapSrc ? <img className={`localization-heatmap ${selectedMode}`} src={heatmapSrc} alt="" aria-hidden="true" /> : null}
+        {active && heatmapModes.length > 1 ? (
+          <div className="localization-mode-toggle" aria-label="Heatmap display mode">
+            {heatmapModes.map((item) => (
+              <button
+                key={item.mode}
+                type="button"
+                aria-pressed={selectedMode === item.mode}
+                onClick={() => setMode(item.mode)}
+                title={item.title}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function heatmapSource(localization?: VisionLocalization | null) {
+function availableModes(localization?: VisionLocalization | null): Array<{ mode: HeatmapMode; label: string; title: string }> {
+  if (!localization) {
+    return [];
+  }
+
+  const modes: Array<{ mode: HeatmapMode; label: string; title: string }> = [];
+  if (hasHeatmap(localization, "threshold")) {
+    modes.push({ mode: "threshold", label: "기준", title: "Threshold 기준 heatmap" });
+  }
+  if (hasHeatmap(localization, "full")) {
+    modes.push({ mode: "full", label: "전체", title: "전체 분포 heatmap" });
+  }
+  if (hasHeatmap(localization, "focus")) {
+    modes.push({ mode: "focus", label: "강조", title: "이상 영역 강조" });
+  }
+  return modes;
+}
+
+function hasHeatmap(localization: VisionLocalization, mode: HeatmapMode) {
+  const source = heatmapValue(localization, mode);
+  return Boolean(source.url || source.base64);
+}
+
+function heatmapSource(localization?: VisionLocalization | null, mode: HeatmapMode = "threshold") {
   if (!localization) {
     return "";
   }
-  if (localization.heatmapUrl) {
-    return uploadBase(localization.heatmapUrl);
+
+  const source = heatmapValue(localization, mode);
+  if (source?.url) {
+    return uploadBase(source.url);
   }
-  if (localization.heatmapBase64) {
-    return localization.heatmapBase64.startsWith("data:")
-      ? localization.heatmapBase64
-      : `data:image/png;base64,${localization.heatmapBase64}`;
+  if (source?.base64) {
+    return source.base64.startsWith("data:")
+      ? source.base64
+      : `data:image/png;base64,${source.base64}`;
+  }
+
+  if (mode !== "threshold") {
+    return heatmapSource(localization, "threshold");
   }
   return "";
+}
+
+function heatmapValue(localization: VisionLocalization, mode: HeatmapMode) {
+  if (mode === "full") {
+    return { url: localization.heatmapFullUrl, base64: localization.heatmapFullBase64 };
+  }
+  if (mode === "focus") {
+    return { url: localization.heatmapFocusUrl, base64: localization.heatmapFocusBase64 };
+  }
+  return { url: localization.heatmapUrl, base64: localization.heatmapBase64 };
 }

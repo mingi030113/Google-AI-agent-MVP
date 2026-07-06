@@ -9,7 +9,7 @@ from .inference import PatchCorePredictor
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run PatchCore inference on one image.")
-    parser.add_argument("--artifact-dir", default="./artifacts/patchcore/bottle")
+    parser.add_argument("--artifact-dir", default="./artifacts/bottle")
     parser.add_argument("--image", required=True)
     parser.add_argument("--out-json")
     args = parser.parse_args()

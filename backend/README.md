@@ -54,13 +54,22 @@ RAG는 로컬 JSON 저장소에서는 deterministic embedding 배열을 `data/db
 
 ## Vision AI 전환
 
-기본값은 로컬 휴리스틱 판정입니다.
+프로젝트 기본 검사 경로는 PatchCore입니다. AI 검사에서 heatmap을 보려면 먼저 `model_service`를 실행한 뒤 backend가 아래 설정으로 실행되어야 합니다.
 
-```env
-VISION_DRIVER=local
+```powershell
+pwsh ../scripts/start-patchcore.ps1
 ```
 
-Gemini Vision 분석을 사용할 때는 아래 값을 설정합니다.
+```env
+VISION_DRIVER=patchcore
+PATCHCORE_MODEL_SERVICE_URL=http://127.0.0.1:8000
+```
+
+PatchCore 판정은 `normal`, `suspicious`, `defective`를 그대로 사용합니다. 현재 UI는 검증된 heatmap만 표시하고, pixel-level box는 보정 전까지 표시하지 않습니다.
+
+`GEMINI_API_KEY`가 설정되어 있으면 PatchCore가 `suspicious` 또는 `defective`로 판정한 이미지에 한해 Gemini labeler가 결함 유형 추정(`scratch`, `contamination`, `dent`, `crack`)과 유형별 점수를 생성합니다. Gemini는 PatchCore 판정을 덮어쓰지 않습니다.
+
+Gemini Vision 단독 분석을 사용할 때만 아래처럼 전환합니다.
 
 ```env
 VISION_DRIVER=gemini
@@ -68,7 +77,7 @@ GEMINI_API_KEY=...
 GEMINI_VISION_MODEL=gemini-2.5-flash
 ```
 
-Gemini 호출이 실패하면 검사 요청은 실패시키지 않고 로컬 판정으로 fallback합니다.
+Gemini Vision 호출이 실패하면 검사 요청은 실패시키지 않고 로컬 판정으로 fallback합니다.
 
 ## Agent 답변 생성
 

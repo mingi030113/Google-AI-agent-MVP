@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import base64
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 
 from model_service.artifacts import load_metadata, load_threshold, validate_folder_dataset
@@ -10,12 +12,15 @@ from model_service.decision import decide_result
 
 try:
     import numpy as np
-    from model_service.localization import TransformSpec, boxes_from_mask, crop_box_to_original
+    from PIL import Image
+    from model_service.localization import TransformSpec, boxes_from_mask, crop_box_to_original, heatmap_png_base64
 except ModuleNotFoundError:  # pragma: no cover - optional runtime deps.
     np = None
+    Image = None
     TransformSpec = None
     boxes_from_mask = None
     crop_box_to_original = None
+    heatmap_png_base64 = None
 
 try:
     from fastapi.testclient import TestClient
@@ -95,6 +100,29 @@ class LocalizationTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(boxes), 1)
         self.assertEqual(boxes[0]["coordinateSpace"], "original")
+
+    def test_heatmap_png_supports_threshold_full_and_focus_modes(self) -> None:
+        scores = np.array([[0.10, 0.20], [0.31, 0.90]], dtype=np.float32)
+        spec = TransformSpec((2, 2), (2, 2), (2, 2))
+
+        threshold_encoded = heatmap_png_base64(scores, spec, mode="threshold", pixel_threshold=0.30)
+        threshold_image = Image.open(BytesIO(base64.b64decode(threshold_encoded))).convert("RGBA")
+        low_pixel = threshold_image.getpixel((0, 0))
+        high_pixel = threshold_image.getpixel((1, 1))
+        self.assertEqual(low_pixel[3], 255)
+        self.assertEqual(high_pixel[3], 255)
+        self.assertLess(low_pixel[0], high_pixel[0])
+
+        full_encoded = heatmap_png_base64(scores, spec, mode="full")
+        full_image = Image.open(BytesIO(base64.b64decode(full_encoded))).convert("RGBA")
+        self.assertEqual(full_image.getpixel((0, 0))[3], 255)
+        self.assertEqual(full_image.getpixel((1, 1))[3], 255)
+        self.assertNotEqual(full_image.getpixel((0, 0))[:3], full_image.getpixel((1, 1))[:3])
+
+        focus_encoded = heatmap_png_base64(scores, spec, mode="focus", pixel_threshold=0.30)
+        focus_image = Image.open(BytesIO(base64.b64decode(focus_encoded))).convert("RGBA")
+        self.assertEqual(focus_image.getpixel((0, 0))[3], 0)
+        self.assertGreater(focus_image.getpixel((1, 1))[3], 0)
 
 
 @unittest.skipIf(TestClient is None or create_app is None, "fastapi test dependencies are not installed")

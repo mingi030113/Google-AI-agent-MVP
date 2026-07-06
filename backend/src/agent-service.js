@@ -64,6 +64,7 @@ export async function answerAgentQuestion({ question, inspectionId, processId, e
       similarCases,
       answerDriver: generated.raw?.driver ?? generated.answerDriver ?? "local",
       answerModel: generated.raw?.model ?? generated.answerModel,
+      answerFallbackReason: generated.fallbackReason,
       fallback: false
     };
   }
@@ -117,6 +118,7 @@ export async function answerAgentQuestion({ question, inspectionId, processId, e
     similarCases,
     answerDriver: generated.raw?.driver ?? generated.answerDriver ?? "local",
     answerModel: generated.raw?.model ?? generated.answerModel,
+    answerFallbackReason: generated.fallbackReason,
     fallback: false
   };
 }
@@ -135,15 +137,16 @@ async function searchSimilarCases(store, criteria) {
 }
 
 async function generateFinalAnswer({ env, question, intent, inspection, defectType, sources, similarCases, checklist, fallbackAnswer }) {
-  const driver = (env.AGENT_ANSWER_DRIVER ?? (env.GEMINI_API_KEY ? "gemini" : "local")).trim();
+  const driver = resolveAgentAnswerDriver(env);
   if (driver !== "gemini") {
     return { answer: fallbackAnswer, checklist, answerDriver: "local" };
   }
 
+  const model = env.GEMINI_AGENT_MODEL ?? "gemini-3-flash-preview";
   try {
     const client = new GeminiAgentAnswerClient({
       apiKey: env.GEMINI_API_KEY,
-      model: env.GEMINI_AGENT_MODEL ?? "gemini-3-flash-preview"
+      model
     });
     return await client.generate({
       question,
@@ -156,8 +159,29 @@ async function generateFinalAnswer({ env, question, intent, inspection, defectTy
     });
   } catch (error) {
     console.warn("Gemini Agent answer generation failed; falling back to local RAG:", error);
-    return { answer: fallbackAnswer, checklist, answerDriver: "local" };
+    return {
+      answer: fallbackAnswer,
+      checklist,
+      answerDriver: "gemini-fallback",
+      answerModel: model,
+      fallbackReason: error instanceof Error ? error.message : "Gemini Agent answer generation failed."
+    };
   }
+}
+
+function resolveAgentAnswerDriver(env) {
+  const configured = String(env.AGENT_ANSWER_DRIVER ?? "").trim().toLowerCase();
+  const hasApiKey = Boolean(env.GEMINI_API_KEY?.trim());
+
+  if (configured === "local-only" || env.AGENT_ANSWER_FORCE_LOCAL === "true") {
+    return "local";
+  }
+
+  if (hasApiKey) {
+    return "gemini";
+  }
+
+  return configured === "gemini" ? "gemini" : "local";
 }
 
 function buildGeminiContext({ inspection, defectType }) {

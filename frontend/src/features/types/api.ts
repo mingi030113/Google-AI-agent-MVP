@@ -82,7 +82,12 @@ export interface LabelerModel {
 
 export interface VisionLocalization {
   heatmapBase64?: string | null;
+  heatmapFullBase64?: string | null;
+  heatmapFocusBase64?: string | null;
   heatmapUrl?: string | null;
+  heatmapFullUrl?: string | null;
+  heatmapFocusUrl?: string | null;
+  heatmapMode?: "threshold" | "full" | "focus";
   maskUrl?: string | null;
   boxes: VisionBox[];
   imageSize?: { width: number; height: number } | null;
@@ -181,8 +186,9 @@ export interface DashboardMetricsResponse {
 }
 
 export interface AskAgentResponse extends AgentGuidance {
-  answerDriver?: "gemini" | "local" | string;
+  answerDriver?: "gemini" | "gemini-fallback" | "local" | string;
   answerModel?: string;
+  answerFallbackReason?: string;
   fallback: boolean;
 }
 

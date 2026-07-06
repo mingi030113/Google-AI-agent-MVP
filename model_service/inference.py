@@ -63,10 +63,10 @@ class PatchCorePredictor:
 
         original = Image.open(BytesIO(image_bytes)).convert("RGB")
         suffix = Path(filename).suffix or ".png"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
-            tmp.write(image_bytes)
-            tmp.flush()
-            raw_prediction = self._predict_path(Path(tmp.name))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / f"input{suffix}"
+            image_path.write_bytes(image_bytes)
+            raw_prediction = self._predict_path(image_path)
 
         anomaly_score = extract_scalar(raw_prediction, ["pred_score", "pred_scores", "anomaly_score", "image_score", "score"])
         anomaly_map = extract_value(raw_prediction, ["anomaly_map", "anomaly_maps", "pred_map", "heatmap"])
