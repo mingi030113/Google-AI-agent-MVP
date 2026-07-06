@@ -81,7 +81,7 @@ export async function answerAgentQuestion({ question, inspectionId, processId, e
   if (matchedManuals.length === 0) {
     return {
       answer: buildNoSourceAnswer({ intent, inspection, defectType: inferredDefectType }),
-      checklist: buildNoSourceChecklist(intent),
+      checklist: buildNoSourceChecklist(intent, inspection),
       sources: [],
       similarCases,
       answerDriver: "local",
@@ -139,7 +139,11 @@ async function searchSimilarCases(store, criteria) {
 async function generateFinalAnswer({ env, question, intent, inspection, defectType, sources, similarCases, checklist, fallbackAnswer }) {
   const driver = resolveAgentAnswerDriver(env);
   if (driver !== "gemini") {
-    return { answer: fallbackAnswer, checklist, answerDriver: "local" };
+    return guardNormalInspectionResponse({
+      answer: fallbackAnswer,
+      checklist,
+      answerDriver: "local"
+    }, { inspection, fallbackAnswer });
   }
 
   const model = env.GEMINI_AGENT_MODEL ?? "gemini-3-flash-preview";
@@ -148,7 +152,7 @@ async function generateFinalAnswer({ env, question, intent, inspection, defectTy
       apiKey: env.GEMINI_API_KEY,
       model
     });
-    return await client.generate({
+    const generated = await client.generate({
       question,
       intent,
       context: buildGeminiContext({ inspection, defectType }),
@@ -157,15 +161,16 @@ async function generateFinalAnswer({ env, question, intent, inspection, defectTy
       checklist,
       fallbackAnswer
     });
+    return guardNormalInspectionResponse(generated, { inspection, fallbackAnswer });
   } catch (error) {
     console.warn("Gemini Agent answer generation failed; falling back to local RAG:", error);
-    return {
+    return guardNormalInspectionResponse({
       answer: fallbackAnswer,
       checklist,
       answerDriver: "gemini-fallback",
       answerModel: model,
       fallbackReason: error instanceof Error ? error.message : "Gemini Agent answer generation failed."
-    };
+    }, { inspection, fallbackAnswer });
   }
 }
 
@@ -192,6 +197,8 @@ function buildGeminiContext({ inspection, defectType }) {
     };
   }
 
+  const visionAnalysis = inspection.visionAnalysis ?? {};
+
   return {
     hasInspectionContext: true,
     inspectionId: inspection.id,
@@ -201,6 +208,9 @@ function buildGeminiContext({ inspection, defectType }) {
     result: inspection.result,
     defectType,
     confidence: inspection.confidence,
+    anomalyScore: visionAnalysis.anomalyScore,
+    threshold: visionAnalysis.threshold,
+    decisionMargin: visionAnalysis.decisionMargin,
     status: inspection.status,
     memo: inspection.memo,
     latestFeedback: inspection.feedback
@@ -261,6 +271,10 @@ function buildRagAnswer({ intent, contextText, chunks, sources, checklist, inspe
   const evidence = summarizeEvidence(chunks);
   const target = defectType ? `${defectType} 불량` : "해당 검사 건";
 
+  if (isNormalInspection(inspection)) {
+    return buildNormalInspectionAnswer({ contextText, title, evidence, inspection });
+  }
+
   if (intent === "cause_analysis") {
     return `${contextText}의 ${target}은 "${title}" 기준상 ${evidence} 항목을 먼저 의심하는 것이 맞습니다. 원인 확인은 1) 설비 접촉/마모, 2) 이송 또는 세척 조건, 3) 작업대/보관 구역 오염 순서로 좁히고, 확인되지 않은 항목은 추정 원인으로 확정하지 마세요.`;
   }
@@ -279,15 +293,21 @@ function buildRagAnswer({ intent, contextText, chunks, sources, checklist, inspe
   if (intent === "action_plan") {
     return `${contextText} 기준으로 "${title}"의 조치 절차를 우선 적용하세요. 핵심 근거는 ${evidence}이며, 1차 조치 후 동일 LOT 재검사와 피드백 기록까지 완료해야 조치가 닫힙니다.`;
   }
-  if (inspection?.result === "normal") {
-    return `${contextText}는 현재 정상 판정이지만, 질문한 조건과 가까운 기준서 "${title}"를 확인했습니다. 불필요한 조치보다 ${evidence} 항목을 예방 점검으로 확인하고, 이상이 없으면 정상 판정 근거만 기록하세요.`;
-  }
   return `${contextText} 기준으로 업로드된 매뉴얼 "${title}"를 우선 확인했습니다. 핵심 근거는 ${evidence}이며, 질문 목적에 맞춰 조치, 재검사, 기록 순서로 처리하세요.`;
 }
 
 function buildManualAnswer({ intent, contextText, manual, checklist, inspection, defectType }) {
   const target = defectType ? `${defectType} 불량` : "해당 검사 건";
   const firstActions = checklist.map((item) => item.label).slice(0, 2).join(", ");
+
+  if (isNormalInspection(inspection)) {
+    return buildNormalInspectionAnswer({
+      contextText,
+      title: manual.title,
+      evidence: `"${manual.excerpt}"`,
+      inspection
+    });
+  }
 
   if (intent === "cause_analysis") {
     return `${contextText}의 ${target} 원인은 ${manual.title} 기준상 "${manual.excerpt}" 흐름으로 좁히는 것이 좋습니다. 먼저 ${firstActions} 항목을 확인하고, 설비 로그와 작업 조건이 맞지 않으면 원인 후보를 보류하세요.`;
@@ -307,15 +327,17 @@ function buildManualAnswer({ intent, contextText, manual, checklist, inspection,
   if (intent === "action_plan") {
     return `${contextText} 기준으로는 ${manual.title}를 우선 적용하세요. ${firstActions} 순서로 처리한 뒤 조치 결과와 재검사 결과를 검사 피드백에 남기면 됩니다.`;
   }
-  if (inspection?.result === "normal") {
-    return `${contextText}는 정상 판정입니다. 다만 예방 점검 관점에서 ${manual.title}의 "${manual.excerpt}" 항목만 확인하고, 이상이 없으면 추가 조치 없이 정상 근거를 기록하세요.`;
-  }
   return `${contextText} 기준으로는 ${manual.title}를 우선 적용하는 것이 좋습니다. ${manual.excerpt} 조치 결과를 검사 피드백에 남기세요.`;
 }
 
 function buildNoSourceAnswer({ intent, inspection, defectType }) {
   const contextText = buildContextText(inspection);
   const target = defectType ? `${defectType} 불량` : "해당 검사 건";
+
+  if (isNormalInspection(inspection)) {
+    return buildNormalInspectionAnswer({ contextText, inspection });
+  }
+
   if (intent === "cause_analysis") {
     return `${contextText}의 ${target} 원인을 특정할 기준서를 찾지 못했습니다. 설비 로그, 최근 조건 변경, 작업대 오염 여부를 확인한 뒤 불량 유형이나 설비명을 포함해 다시 질문해 주세요.`;
   }
@@ -331,7 +353,11 @@ function buildNoSourceAnswer({ intent, inspection, defectType }) {
   return "관련 기준서를 특정하지 못했습니다. 최근 불량 유형, 설비 로그, 작업 조건을 함께 확인한 뒤 상세 조건으로 다시 질문해 주세요.";
 }
 
-function buildNoSourceChecklist(intent) {
+function buildNoSourceChecklist(intent, inspection) {
+  if (isNormalInspection(inspection)) {
+    return buildNormalInspectionChecklist(inspection);
+  }
+
   const common = [
     { id: "fallback-1", label: "검사 상세에서 불량 유형과 설비 조건 확인", priority: "medium" },
     { id: "fallback-2", label: "해당 설비의 최근 알람 로그와 작업 조건 확인", priority: "medium" }
@@ -358,6 +384,10 @@ function buildContextText(inspection) {
 }
 
 function buildChecklistForIntent({ intent, chunks, inspection, defectType }) {
+  if (isNormalInspection(inspection)) {
+    return buildNormalInspectionChecklist(inspection);
+  }
+
   const extracted = buildChecklistFromChunks(chunks);
   const contextLabel = inspection ? `${inspection.lotNo} 재검사` : "동일 LOT 재검사";
   const typeLabel = defectType ? `${defectType} 불량` : "불량";
@@ -516,6 +546,76 @@ function isActionLine(line) {
     !line.startsWith("#") &&
     /확인|점검|제거|청소|교체|격리|보고|재검사|기록|수행|중지/.test(line)
   );
+}
+
+function guardNormalInspectionResponse(generated, { inspection, fallbackAnswer }) {
+  if (!isNormalInspection(inspection)) {
+    return generated;
+  }
+
+  const answer = containsEscalationLanguage(generated.answer)
+    ? fallbackAnswer
+    : generated.answer;
+
+  return {
+    ...generated,
+    answer,
+    checklist: buildNormalInspectionChecklist(inspection)
+  };
+}
+
+function containsEscalationLanguage(answer) {
+  return /긴급|즉시|격리|설비\s*중지|생산\s*중지|조치\s*필요|불량\s*조치|불량이\s*확인|불량이\s*발생/.test(String(answer ?? ""));
+}
+
+function isNormalInspection(inspection) {
+  return inspection?.result === "normal";
+}
+
+function buildNormalInspectionAnswer({ contextText, title, evidence, inspection }) {
+  const basis = title
+    ? `참고 기준서 "${title}"의 ${evidence ?? "관련 항목"}은 예방 점검 수준으로만 확인하세요.`
+    : "추가 이상 징후가 없으면 정상 판정 근거만 기록하세요.";
+  return `${contextText}는 현재 정상 판정입니다. ${normalScoreSentence(inspection)} ${basis}`;
+}
+
+function buildNormalInspectionChecklist(inspection) {
+  const thresholdNear = isThresholdNear(inspection);
+  return [
+    { id: "normal-1", label: "정상 판정과 이상 점수가 Threshold 이하인지 확인", priority: "medium" },
+    {
+      id: "normal-2",
+      label: thresholdNear
+        ? "Threshold 근접 건으로 동일 조건 샘플을 예방 차원에서 확인"
+        : "동일 설비는 정기 모니터링 주기에 포함",
+      priority: thresholdNear ? "medium" : "low"
+    },
+    { id: "normal-3", label: "추가 이상 징후가 없으면 정상 판정 근거만 기록", priority: "low" }
+  ];
+}
+
+function normalScoreSentence(inspection) {
+  const score = Number(inspection?.visionAnalysis?.anomalyScore);
+  const thresholdValue = inspection?.visionAnalysis?.threshold?.image ?? inspection?.visionAnalysis?.threshold;
+  const threshold = Number(thresholdValue);
+
+  if (!Number.isFinite(score) || !Number.isFinite(threshold) || threshold <= 0) {
+    return "현재 판정 기준상 특별 대응 대상은 아닙니다.";
+  }
+
+  const ratio = score / threshold;
+  if (ratio >= 0.9) {
+    return "이상 점수가 Threshold 이하이지만 기준에 근접하므로 관찰 또는 예방 확인 대상으로만 다루세요.";
+  }
+
+  return "이상 점수가 Threshold 이하이므로 특별 대응 대상은 아닙니다.";
+}
+
+function isThresholdNear(inspection) {
+  const score = Number(inspection?.visionAnalysis?.anomalyScore);
+  const thresholdValue = inspection?.visionAnalysis?.threshold?.image ?? inspection?.visionAnalysis?.threshold;
+  const threshold = Number(thresholdValue);
+  return Number.isFinite(score) && Number.isFinite(threshold) && threshold > 0 && score / threshold >= 0.9;
 }
 
 function compactExcerpt(text) {

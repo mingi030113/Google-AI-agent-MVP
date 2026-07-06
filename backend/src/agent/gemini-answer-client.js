@@ -89,7 +89,13 @@ function buildRequest({ question, intent, context, sources, similarCases, checkl
               "- 작업자 안내문 질문이면 현장 전달 문구처럼 바로 전달 가능한 문장으로 작성한다.",
               "- 리포트 질문이면 보고서에 붙일 수 있는 요약 문장으로 작성한다.",
               "- 유사 사례가 있으면 같은 설비/불량/조치 결과가 현재 판단에 어떤 의미인지 1문장으로 반영한다.",
-              "- checklist는 3~5개, 각 label은 현장에서 수행 가능한 동작으로 쓴다."
+              "- checklist는 3~5개, 각 label은 현장에서 수행 가능한 동작으로 쓴다.",
+              "",
+              "정상 판정 보호 규칙:",
+              "- 검사 컨텍스트 result가 normal이면 현재 건을 불량으로 취급하지 않는다.",
+              "- normal 건에는 긴급 점검, LOT 격리, 설비 중지, 즉시 조치, 불량 조치 필요 표현을 쓰지 않는다.",
+              "- normal 건의 checklist priority는 medium 또는 low만 사용한다.",
+              "- normal 건은 정상 판정 근거 확인, 예방 점검, 정기 모니터링, Threshold 근접 시 예방 확인 수준으로만 답한다."
             ].join("\n")
           }
         ]

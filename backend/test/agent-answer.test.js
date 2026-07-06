@@ -120,11 +120,59 @@ describe("Agent answer driver selection", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("guards normal inspections from urgent action language even when Gemini over-escalates", async () => {
+    const originalFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = async () => {
+      called = true;
+      return new Response(JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{
+              text: JSON.stringify({
+                answer: "긴급 점검과 LOT 격리가 필요합니다.",
+                checklist: [
+                  { label: "설비 즉시 중지", priority: "high" },
+                  { label: "동일 LOT 격리", priority: "high" }
+                ]
+              })
+            }]
+          }
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    };
+
+    try {
+      const result = await answerAgentQuestion(
+        { question: "조치 필요해?", inspectionId: "insp-normal" },
+        fakeRagStore(normalInspection()),
+        {
+          env: {
+            GEMINI_API_KEY: "test-key",
+            GEMINI_AGENT_MODEL: "gemini-3-flash-preview"
+          }
+        }
+      );
+
+      assert.equal(called, true);
+      assert.equal(result.answerDriver, "gemini");
+      assert.match(result.answer, /정상 판정/);
+      assert.doesNotMatch(result.answer, /긴급|격리|중지|조치 필요/);
+      assert.equal(result.checklist.some((item) => item.priority === "high"), false);
+      assert.match(result.checklist[0].label, /정상 판정/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
-function fakeRagStore() {
+function fakeRagStore(inspection = null) {
   return {
-    getInspection: async () => null,
+    getInspection: async () => inspection,
     listInspections: async () => [],
     searchManualChunks: async () => [{
       manualId: "manual-scratch",
@@ -133,5 +181,25 @@ function fakeRagStore() {
       score: 0.92,
       metadata: { title: "스크래치 불량 조치 기준서", defectType: "scratch" }
     }]
+  };
+}
+
+function normalInspection() {
+  return {
+    id: "insp-normal",
+    lotNo: "LOT-NORMAL-1",
+    processId: "process-a",
+    processName: "A공정",
+    equipmentId: "eq-a-1",
+    equipmentName: "A공정 1호기",
+    result: "normal",
+    defectType: null,
+    confidence: 0.82,
+    status: "closed",
+    visionAnalysis: {
+      anomalyScore: 0.21,
+      threshold: { image: 0.31 },
+      decisionMargin: -0.1
+    }
   };
 }
