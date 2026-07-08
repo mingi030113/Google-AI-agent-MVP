@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { equipment, manuals, processes } from "../domain.js";
+import { removeFeedback } from "../inspection-service.js";
 import { seedDatabase, seedUploadFiles } from "../seed.js";
 import { cosineSimilarity } from "../rag/embedding.js";
 
@@ -70,6 +71,11 @@ export class JsonStore {
     return [...this.db.inspections];
   }
 
+  async searchInspectionHistory(criteria) {
+    const { findSimilarInspectionCases } = await import("../similar-case-service.js");
+    return findSimilarInspectionCases(this.db.inspections, criteria);
+  }
+
   async getInspection(id) {
     return this.db.inspections.find((inspection) => inspection.id === id) ?? null;
   }
@@ -87,6 +93,22 @@ export class JsonStore {
     }
 
     this.db.inspections[index] = updater(this.db.inspections[index]);
+    await this.save();
+    return this.db.inspections[index];
+  }
+
+  async deleteInspectionFeedback(inspectionId, feedbackId) {
+    const index = this.db.inspections.findIndex((inspection) => inspection.id === inspectionId);
+    if (index === -1) {
+      return null;
+    }
+
+    const result = removeFeedback(this.db.inspections[index], feedbackId);
+    if (!result.deleted) {
+      return null;
+    }
+
+    this.db.inspections[index] = result.inspection;
     await this.save();
     return this.db.inspections[index];
   }

@@ -45,10 +45,19 @@ export function sendJson(response, statusCode, payload, headers = {}) {
 
 export function sendError(response, error) {
   const statusCode = error.statusCode ?? 500;
+  if (statusCode === 500) {
+    console.error("Unhandled backend error:", error);
+  }
+  const message = statusCode === 500 ? "Internal server error." : error.message;
+  const code = error.code ?? statusCode;
   sendJson(response, statusCode, {
+    status: "error",
+    code,
+    message,
+    fallbackUsed: error.fallbackUsed,
     error: {
-      message: statusCode === 500 ? "Internal server error." : error.message,
-      code: error.code ?? statusCode
+      message,
+      code
     }
   });
 }
@@ -61,7 +70,7 @@ export function sendNoContent(response) {
 export function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type,authorization"
   };
 }

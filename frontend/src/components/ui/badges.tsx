@@ -2,6 +2,7 @@ import type { InspectionResult, InspectionStatus, RiskLevel } from "@/features/t
 
 const resultLabels: Record<InspectionResult, string> = {
   normal: "정상",
+  suspicious: "의심",
   defective: "불량"
 };
 
@@ -9,7 +10,7 @@ const statusLabels: Record<InspectionStatus, string> = {
   pending: "대기",
   reviewed: "검토",
   action_required: "조치 필요",
-  closed: "종결"
+  closed: "완료"
 };
 
 const riskLabels: Record<RiskLevel, string> = {

@@ -13,6 +13,18 @@
 | `/reports` | 품질 리포트 생성/조회 | `ReportGenerateForm`, `ReportList`, `ReportViewer` | `GET/POST /api/reports` |
 | `/admin/manuals` | 품질 매뉴얼 관리 | `ManualUploadForm`, `ManualTable`, `EmbeddingStatusBadge` | `GET/POST /api/manuals` |
 
+## MVP Auth Flow
+
+현재 웹 MVP는 Supabase Auth 직접 연동 전 단계로, `/login`에서 역할을 선택하면 브라우저 localStorage에 데모 세션을 저장한다.
+`AppShell`은 세션 유무와 역할을 확인해 메뉴를 필터링하고, 접근 권한이 없는 화면은 역할별 기본 화면으로 돌려보낸다.
+
+| Role | Visible Routes |
+|---|---|
+| `worker` | `/inspections/new`, `/inspections`, `/agent` |
+| `quality_manager` | `/inspections/new`, `/inspections`, `/dashboard`, `/agent`, `/reports`, `/admin/manuals` |
+| `process_manager` | `/inspections`, `/dashboard`, `/agent`, `/reports` |
+| `admin` | all MVP app routes |
+
 ## Global Layout
 
 App 영역은 좌측 사이드바와 상단 헤더를 사용한다.
@@ -80,4 +92,3 @@ Widgets:
 | Defect trend | 일자별 정상/불량 추이 |
 | Process defect rate | 공정별 불량률 |
 | Equipment risk table | 설비별 불량률과 위험도 |
-

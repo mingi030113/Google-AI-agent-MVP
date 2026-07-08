@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { createRepository } from "./repositories/index.js";
+import { createBackendContainer } from "./infrastructure/container.js";
 import { parseMultipart } from "./multipart.js";
 import {
   badRequest,
@@ -13,33 +13,42 @@ import {
   sendJson,
   sendNoContent
 } from "./http.js";
+import { assetClasses } from "./domain.js";
 import {
-  analyzeInspection,
-  applyFeedback,
-  filterInspections,
-  paginate,
-  toListItem
-} from "./inspection-service.js";
-import { buildDashboardMetrics } from "./dashboard-service.js";
-import { answerAgentQuestion } from "./agent-service.js";
-import { generateReport } from "./report-service.js";
-import { createVisionModelClient } from "./vision/index.js";
-import { ingestManual } from "./rag/manual-ingestion-service.js";
+  analyzeInspectionUseCase,
+  applyInspectionFeedbackUseCase,
+  deleteInspectionFeedbackUseCase,
+  getInspectionUseCase,
+  listInspectionsUseCase,
+  updateInspectionChecklistUseCase
+} from "./application/use-cases/inspection-use-cases.js";
+import { getDashboardMetricsUseCase } from "./application/use-cases/dashboard-use-cases.js";
+import { askAgentQuestionUseCase } from "./application/use-cases/agent-use-cases.js";
+import {
+  createReportUseCase,
+  deleteReportUseCase,
+  getReportUseCase,
+  listReportsUseCase
+} from "./application/use-cases/report-use-cases.js";
+import {
+  deleteManualUseCase,
+  ingestManualUseCase,
+  listManualsUseCase
+} from "./application/use-cases/manual-use-cases.js";
 
 export async function createApp({ dataDir, env = process.env, visionClient } = {}) {
-  const store = await createRepository({ dataDir, env });
-  const vision = visionClient ?? createVisionModelClient({ env });
+  const container = await createBackendContainer({ dataDir, env, visionClient });
 
   return createServer(async (request, response) => {
     try {
-      await routeRequest({ request, response, store, visionClient: vision });
+      await routeRequest({ request, response, ...container, env });
     } catch (error) {
       sendError(response, error);
     }
   });
 }
 
-async function routeRequest({ request, response, store, visionClient }) {
+async function routeRequest({ request, response, store, visionClient, env }) {
   if (request.method === "OPTIONS") {
     sendNoContent(response);
     return;
@@ -58,9 +67,14 @@ async function routeRequest({ request, response, store, visionClient }) {
     return;
   }
 
+  if (request.method === "GET" && pathname === "/api/debug/gemini") {
+    sendJson(response, 200, await checkGeminiConfig(env));
+    return;
+  }
+
   if (request.method === "GET" && pathname === "/api/master-data") {
     const [processes, equipment] = await Promise.all([store.listProcesses(), store.listEquipment()]);
-    sendJson(response, 200, { processes, equipment });
+    sendJson(response, 200, { processes, equipment, assetClasses });
     return;
   }
 
@@ -81,11 +95,7 @@ async function routeRequest({ request, response, store, visionClient }) {
     if (request.method !== "GET") {
       throw methodNotAllowed();
     }
-    const inspections = await store.listInspections();
-    const filtered = filterInspections(inspections, query)
-      .sort((left, right) => right.inspectedAt.localeCompare(left.inspectedAt))
-      .map(toListItem);
-    sendJson(response, 200, paginate(filtered, query));
+    sendJson(response, 200, await listInspectionsUseCase({ store, query }));
     return;
   }
 
@@ -98,12 +108,38 @@ async function routeRequest({ request, response, store, visionClient }) {
     return;
   }
 
+  const inspectionFeedbackDeleteMatch = pathname.match(/^\/api\/inspections\/([^/]+)\/feedback\/([^/]+)$/);
+  if (inspectionFeedbackDeleteMatch) {
+    if (request.method !== "DELETE") {
+      throw methodNotAllowed();
+    }
+    await handleDeleteFeedback(response, store, inspectionFeedbackDeleteMatch[1], decodeURIComponent(inspectionFeedbackDeleteMatch[2]));
+    return;
+  }
+
+  const inspectionChecklistMatch = pathname.match(/^\/api\/inspections\/([^/]+)\/checklist$/);
+  if (inspectionChecklistMatch) {
+    if (request.method !== "PATCH") {
+      throw methodNotAllowed();
+    }
+    const inspection = await updateInspectionChecklistUseCase({
+      store,
+      inspectionId: inspectionChecklistMatch[1],
+      payload: await readJson(request)
+    });
+    if (!inspection) {
+      throw notFound("Inspection was not found.");
+    }
+    sendJson(response, 200, { inspection });
+    return;
+  }
+
   const inspectionMatch = pathname.match(/^\/api\/inspections\/([^/]+)$/);
   if (inspectionMatch) {
     if (request.method !== "GET") {
       throw methodNotAllowed();
     }
-    const inspection = await store.getInspection(inspectionMatch[1]);
+    const inspection = await getInspectionUseCase({ store, inspectionId: inspectionMatch[1] });
     if (!inspection) {
       throw notFound("Inspection was not found.");
     }
@@ -115,7 +151,7 @@ async function routeRequest({ request, response, store, visionClient }) {
     if (request.method !== "GET") {
       throw methodNotAllowed();
     }
-    sendJson(response, 200, buildDashboardMetrics(await store.listInspections(), query));
+    sendJson(response, 200, await getDashboardMetricsUseCase({ store, query }));
     return;
   }
 
@@ -123,22 +159,17 @@ async function routeRequest({ request, response, store, visionClient }) {
     if (request.method !== "POST") {
       throw methodNotAllowed();
     }
-    const body = await readJson(request);
-    if (!body.question || body.question.trim().length === 0) {
-      throw badRequest("question is required.");
-    }
-    sendJson(response, 200, await answerAgentQuestion(body, store));
+    sendJson(response, 200, await askAgentQuestionUseCase({ store, env, payload: await readJson(request) }));
     return;
   }
 
   if (pathname === "/api/reports") {
     if (request.method === "GET") {
-      sendJson(response, 200, { items: await store.listReports() });
+      sendJson(response, 200, { items: await listReportsUseCase({ store }) });
       return;
     }
     if (request.method === "POST") {
-      const report = generateReport(await readJson(request), await store.listInspections());
-      await store.addReport(report);
+      const report = await createReportUseCase({ store, env, payload: await readJson(request) });
       sendJson(response, 201, { report });
       return;
     }
@@ -148,7 +179,7 @@ async function routeRequest({ request, response, store, visionClient }) {
   const reportMatch = pathname.match(/^\/api\/reports\/([^/]+)$/);
   if (reportMatch) {
     if (request.method === "GET") {
-      const report = await store.getReport(reportMatch[1]);
+      const report = await getReportUseCase({ store, reportId: reportMatch[1] });
       if (!report) {
         throw notFound("Report was not found.");
       }
@@ -156,13 +187,7 @@ async function routeRequest({ request, response, store, visionClient }) {
       return;
     }
     if (request.method === "DELETE") {
-      if (!store.deleteReport) {
-        throw methodNotAllowed("Report delete is not supported by the active store.");
-      }
-      const deleted = await store.deleteReport(reportMatch[1]);
-      if (!deleted) {
-        throw notFound("Report was not found.");
-      }
+      await deleteReportUseCase({ store, reportId: reportMatch[1] });
       sendNoContent(response);
       return;
     }
@@ -174,10 +199,7 @@ async function routeRequest({ request, response, store, visionClient }) {
     if (request.method !== "DELETE") {
       throw methodNotAllowed();
     }
-    if (!store.deleteManual) {
-      throw methodNotAllowed("Manual delete is not supported by the active store.");
-    }
-    const deleted = await store.deleteManual(manualMatch[1]);
+    const deleted = await deleteManualUseCase({ store, manualId: manualMatch[1] });
     if (!deleted) {
       throw notFound("Manual was not found.");
     }
@@ -187,7 +209,7 @@ async function routeRequest({ request, response, store, visionClient }) {
 
   if (pathname === "/api/manuals") {
     if (request.method === "GET") {
-      sendJson(response, 200, { items: await store.listManuals() });
+      sendJson(response, 200, { items: await listManualsUseCase({ store }) });
       return;
     }
     if (request.method === "POST") {
@@ -206,14 +228,10 @@ async function handleManualUpload(request, response, store) {
     throw badRequest("Content-Type must be multipart/form-data.");
   }
 
-  if (!store.upsertManualWithChunks) {
-    throw methodNotAllowed("Manual upload is not supported by the active store.");
-  }
-
   const body = await readBody(request);
   const { fields, files } = parseMultipart(body, contentType);
   const file = files.file || files.manual;
-  const result = await ingestManual({ fields, file, store });
+  const result = await ingestManualUseCase({ fields, file, store });
   sendJson(response, 201, result);
 }
 
@@ -237,22 +255,24 @@ async function handleAnalyzeInspection(request, response, store, visionClient) {
     contentType: image.contentType
   });
 
-  const inspection = await analyzeInspection({
-    fields,
-    imageUrl,
-    image,
-    visionClient
-  });
-  await store.addInspection(inspection);
+  const inspection = await analyzeInspectionUseCase({ store, fields, imageUrl, image, visionClient });
 
   sendJson(response, 201, { inspection });
 }
 
 async function handleFeedback(request, response, store, inspectionId) {
   const feedback = await readJson(request);
-  const inspection = await store.updateInspection(inspectionId, (current) => applyFeedback(current, feedback));
+  const inspection = await applyInspectionFeedbackUseCase({ store, inspectionId, feedback });
   if (!inspection) {
     throw notFound("Inspection was not found.");
+  }
+  sendJson(response, 200, { inspection });
+}
+
+async function handleDeleteFeedback(response, store, inspectionId, feedbackId) {
+  const inspection = await deleteInspectionFeedbackUseCase({ store, inspectionId, feedbackId });
+  if (!inspection) {
+    throw notFound("Inspection feedback was not found.");
   }
   sendJson(response, 200, { inspection });
 }
@@ -296,4 +316,91 @@ function contentTypeFor(fileName) {
     ".gif": "image/gif",
     ".svg": "image/svg+xml"
   }[extension] ?? "application/octet-stream";
+}
+
+async function checkGeminiConfig(env) {
+  const apiKey = env.GEMINI_API_KEY?.trim();
+  const models = [
+    env.GEMINI_VISION_MODEL || "gemini-3-flash-preview",
+    env.GEMINI_AGENT_MODEL || "gemini-3-flash-preview",
+    env.GEMINI_REPORT_MODEL || env.GEMINI_AGENT_MODEL || "gemini-3-flash-preview"
+  ].filter((model, index, list) => model && list.indexOf(model) === index);
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      hasApiKey: false,
+      agentAnswerDriver: env.AGENT_ANSWER_DRIVER || null,
+      effectiveAgentAnswerDriver: effectiveAgentAnswerDriver(env),
+      models: []
+    };
+  }
+
+  const results = [];
+  for (const model of models) {
+    results.push(await checkGeminiModel({ apiKey, model }));
+  }
+
+  return {
+    ok: results.every((result) => result.ok),
+    hasApiKey: true,
+    agentAnswerDriver: env.AGENT_ANSWER_DRIVER || null,
+    effectiveAgentAnswerDriver: effectiveAgentAnswerDriver(env),
+    visionModel: env.GEMINI_VISION_MODEL || null,
+    agentModel: env.GEMINI_AGENT_MODEL || null,
+    reportModel: env.GEMINI_REPORT_MODEL || null,
+    models: results
+  };
+}
+
+function effectiveAgentAnswerDriver(env) {
+  const configured = String(env.AGENT_ANSWER_DRIVER ?? "").trim().toLowerCase();
+  if (configured === "local-only" || env.AGENT_ANSWER_FORCE_LOCAL === "true") {
+    return "local";
+  }
+  return env.GEMINI_API_KEY?.trim() ? "gemini" : "local";
+}
+
+async function checkGeminiModel({ apiKey, model }) {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Return JSON only: {\"ok\":true}" }] }],
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json"
+          }
+        })
+      }
+    );
+    const text = await response.text();
+    const payload = parseJsonSafely(text);
+    return {
+      ok: response.ok,
+      model,
+      status: response.status,
+      finishReason: payload?.candidates?.[0]?.finishReason,
+      errorStatus: payload?.error?.status,
+      errorMessage: payload?.error?.message
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      model,
+      status: 0,
+      errorMessage: error instanceof Error ? error.message : "Gemini request failed."
+    };
+  }
+}
+
+function parseJsonSafely(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }

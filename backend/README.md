@@ -27,6 +27,7 @@ npm test
 - `GET /api/inspections`
 - `GET /api/inspections/:inspectionId`
 - `POST /api/inspections/:inspectionId/feedback`
+- `DELETE /api/inspections/:inspectionId/feedback/:feedbackId`
 - `GET /api/dashboard/metrics`
 - `POST /api/agent/ask`
 - `GET /api/reports`
@@ -53,13 +54,35 @@ RAG는 로컬 JSON 저장소에서는 deterministic embedding 배열을 `data/db
 
 ## Vision AI 전환
 
-기본값은 로컬 휴리스틱 판정입니다.
+프로젝트 기본 검사 경로는 PatchCore입니다. AI 검사에서 heatmap을 보려면 먼저 `model_service`를 실행한 뒤 backend가 아래 설정으로 실행되어야 합니다.
 
-```env
-VISION_DRIVER=local
+```powershell
+pwsh ../scripts/start-patchcore.ps1
 ```
 
-Gemini Vision 분석을 사용할 때는 아래 값을 설정합니다.
+PatchCore artifact는 기본적으로 `../artifacts` 하위에서 자동 발견됩니다. 현재 지원 클래스는 `bottle`, `metal_nut`입니다. 새 검사 화면에서는 설비 선택에 따라 `assetKey`가 자동 결정되어 PatchCore `/predict`로 전달됩니다.
+
+```text
+../artifacts/bottle/model.ckpt
+../artifacts/bottle/threshold.json
+../artifacts/bottle/metadata.json
+../artifacts/metal_nut/model.ckpt
+../artifacts/metal_nut/threshold.json
+../artifacts/metal_nut/metadata.json
+```
+
+```env
+VISION_DRIVER=patchcore
+PATCHCORE_MODEL_SERVICE_URL=http://127.0.0.1:8000
+```
+
+PatchCore 판정은 `normal`, `suspicious`, `defective`를 그대로 사용합니다. 현재 UI는 검증된 heatmap만 표시하고, pixel-level box는 보정 전까지 표시하지 않습니다.
+
+`GEMINI_API_KEY`가 설정되어 있으면 PatchCore가 `suspicious` 또는 `defective`로 판정한 이미지에 한해 Gemini labeler가 결함 유형 추정(`scratch`, `contamination`, `dent`, `flip`, `crack`)과 유형별 점수를 생성합니다. Gemini는 PatchCore 판정을 덮어쓰지 않습니다.
+
+`flip`처럼 손상 없이 방향만 다른 결함은 단일 이미지만으로 유형을 맞히기 어렵습니다. 이를 위해 클래스별 정상/flip 참조 이미지를 `backend/src/vision/references/<assetKey>/`에 두고 `manifest.json`으로 라벨을 지정하면, labeler 프롬프트에 참조 이미지가 함께 전달되어 "면내 회전은 정상, 뒤집힘만 flip"을 구분하도록 유도합니다. `manifest.json`은 `{ "file", "label"("normal"|"flip"|...), "note" }` 배열이며, 참조가 없는 클래스는 기존과 동일하게 참조 없이 동작합니다. 참조 이미지는 매 요청 프롬프트에 실리므로 3~4장 이내, 384px JPEG 정도로 유지하세요.
+
+Gemini Vision 단독 분석을 사용할 때만 아래처럼 전환합니다.
 
 ```env
 VISION_DRIVER=gemini
@@ -67,7 +90,24 @@ GEMINI_API_KEY=...
 GEMINI_VISION_MODEL=gemini-2.5-flash
 ```
 
-Gemini 호출이 실패하면 검사 요청은 실패시키지 않고 로컬 판정으로 fallback합니다.
+Gemini Vision 호출이 실패하면 검사 요청은 실패시키지 않고 로컬 판정으로 fallback합니다.
+
+## Agent 답변 생성
+
+RAG 검색은 매뉴얼 chunk를 기준으로 수행하고, 최종 답변은 Gemini가 생성할 수 있습니다.
+Gemini 호출이 실패하거나 키가 없으면 기존 로컬 RAG 템플릿 답변으로 fallback합니다.
+
+```env
+AGENT_ANSWER_DRIVER=gemini
+GEMINI_API_KEY=...
+GEMINI_AGENT_MODEL=gemini-3-flash-preview
+```
+
+로컬 템플릿만 사용할 때는 아래처럼 설정합니다.
+
+```env
+AGENT_ANSWER_DRIVER=local
+```
 
 ## RAG 매뉴얼 업로드
 
@@ -84,7 +124,7 @@ curl -F "title=스크래치 조치 기준서" \
 
 Supabase 사용 시 `supabase/migrations/202605180003_manual_rag_match_function.sql`까지 적용해야 pgvector top-k 검색 RPC가 활성화됩니다.
 
-데모 기준서는 `../docs/manuals`에 있으며, 백엔드 실행 후 아래 명령으로 4종 기준서를 한 번에 업로드할 수 있습니다.
+데모 기준서는 `../docs/manuals`에 있으며, 백엔드 실행 후 아래 명령으로 5종 기준서를 한 번에 업로드할 수 있습니다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ..\docs\manuals\upload-rag-manuals.ps1

@@ -7,7 +7,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
         <h1>{title}</h1>
         {description ? <p>{description}</p> : null}
       </div>
-      {actions}
+      {actions ? <div className="page-actions">{actions}</div> : null}
     </div>
   );
 }

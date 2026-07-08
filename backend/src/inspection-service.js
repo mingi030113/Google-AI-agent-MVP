@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { badRequest } from "./http.js";
 import {
+  getAssetClass,
   getEquipment,
   getManualByDefectType,
-  getProcess
+  getProcess,
+  normalizeAssetKey
 } from "./domain.js";
 import { toKstIsoString } from "./time.js";
 
@@ -26,29 +28,43 @@ export function validateInspectionInput({ processId, equipmentId, lotNo }) {
   return { process, selectedEquipment };
 }
 
-export async function analyzeInspection({ fields, imageUrl, image, visionClient }) {
+export async function analyzeInspection({ fields, imageUrl, image, visionClient, store }) {
   const processId = fields.processId?.trim();
   const equipmentId = fields.equipmentId?.trim();
   const lotNo = fields.lotNo?.trim();
   const memo = fields.memo?.trim() || undefined;
   const { process, selectedEquipment } = validateInspectionInput({ processId, equipmentId, lotNo });
-  const analysis = await visionClient.analyze({ fields, image, process, selectedEquipment });
+  const assetKey = normalizeAssetKey(selectedEquipment.assetKey ?? fields.assetKey ?? fields.asset_key);
+  const assetClass = getAssetClass(assetKey);
+  if (!assetClass) {
+    throw badRequest("assetKey is invalid for the selected equipment.");
+  }
+  const analysis = await visionClient.analyze({
+    fields: { ...fields, assetKey },
+    image,
+    process,
+    selectedEquipment,
+    assetKey,
+    assetClass
+  });
   const manual = analysis.defectType ? getManualByDefectType(analysis.defectType) : null;
 
-  return {
+  const inspection = {
     id: `insp-${randomUUID().slice(0, 8)}`,
     imageUrl,
     processId,
     processName: process.name,
     equipmentId,
     equipmentName: selectedEquipment.name,
+    assetKey,
+    assetName: assetClass.name,
     lotNo,
     operatorName: "현장 작업자",
     result: analysis.result,
     defectType: analysis.defectType,
     confidence: analysis.confidence,
     modelName: analysis.modelName,
-    status: analysis.result === "defective" ? "action_required" : "pending",
+    status: initialStatusForResult(analysis.result),
     inspectedAt: toKstIsoString(),
     memo,
     visionAnalysis: analysis.raw,
@@ -60,35 +76,79 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient 
         }
       : undefined
   };
+  await persistVisionArtifacts({ inspection, store });
+  return inspection;
 }
 
 export function toListItem(inspection) {
+  const normalized = normalizeInspectionStatus(inspection);
   return {
-    id: inspection.id,
-    imageUrl: inspection.imageUrl,
-    processName: inspection.processName,
-    equipmentName: inspection.equipmentName,
-    lotNo: inspection.lotNo,
-    result: inspection.result,
-    defectType: inspection.defectType,
-    confidence: inspection.confidence,
-    status: inspection.status,
-    inspectedAt: inspection.inspectedAt
+    id: normalized.id,
+    imageUrl: normalized.imageUrl,
+    processName: normalized.processName,
+    equipmentName: normalized.equipmentName,
+    assetKey: normalized.assetKey,
+    assetName: normalized.assetName,
+    lotNo: normalized.lotNo,
+    result: normalized.result,
+    defectType: normalized.defectType,
+    confidence: normalized.confidence,
+    status: normalized.status,
+    inspectedAt: normalized.inspectedAt,
+    checklistProgress: checklistProgress(normalized)
+  };
+}
+
+export function normalizeInspectionStatus(inspection) {
+  return {
+    ...inspection,
+    status: effectiveStatus(inspection)
   };
 }
 
 export function filterInspections(inspections, query) {
+  const keyword = query.q?.trim().toLowerCase();
   return inspections.filter((inspection) => {
     const inspectedDate = inspection.inspectedAt.slice(0, 10);
+    const searchTarget = [
+      inspection.lotNo,
+      inspection.processName,
+      inspection.equipmentName,
+      inspection.result,
+      inspection.defectType,
+      effectiveStatus(inspection)
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
     return (
+      (!keyword || searchTarget.includes(keyword)) &&
       (!query.startDate || inspectedDate >= query.startDate) &&
       (!query.endDate || inspectedDate <= query.endDate) &&
       (!query.processId || inspection.processId === query.processId) &&
       (!query.equipmentId || inspection.equipmentId === query.equipmentId) &&
       (!query.result || inspection.result === query.result) &&
-      (!query.status || inspection.status === query.status)
+      (!query.status || effectiveStatus(inspection) === query.status)
     );
   });
+}
+
+export function summarizeInspections(inspections) {
+  const total = inspections.length;
+  const actionRequired = inspections.filter((inspection) => effectiveStatus(inspection) === "action_required").length;
+  const pendingReview = inspections.filter((inspection) => effectiveStatus(inspection) === "pending").length;
+  const averageConfidence =
+    total === 0
+      ? 0
+      : Math.round((inspections.reduce((sum, inspection) => sum + Number(inspection.confidence ?? 0), 0) / total) * 1000) / 10;
+
+  return {
+    total,
+    actionRequired,
+    pendingReview,
+    averageConfidence
+  };
 }
 
 export function paginate(items, query) {
@@ -119,22 +179,180 @@ export function applyFeedback(inspection, feedback) {
       ? "closed"
       : correctedResult === "defective"
         ? "action_required"
-        : "reviewed";
+        : correctedResult === "suspicious"
+          ? "pending"
+          : "reviewed";
+  const feedbackEntry = {
+    id: `fb-${randomUUID().slice(0, 8)}`,
+    correctedResult: feedback.correctedResult,
+    correctedDefectType: feedback.correctedDefectType,
+    actionTaken: feedback.actionTaken.trim(),
+    reinspectionResult: feedback.reinspectionResult,
+    note: feedback.note,
+    createdAt: toKstIsoString()
+  };
+  const existingHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
 
   return {
     ...inspection,
     result: correctedResult,
     defectType: correctedDefectType,
     status,
-    feedback: {
-      correctedResult: feedback.correctedResult,
-      correctedDefectType: feedback.correctedDefectType,
-      actionTaken: feedback.actionTaken.trim(),
-      reinspectionResult: feedback.reinspectionResult,
-      note: feedback.note,
-      createdAt: toKstIsoString()
+    feedback: feedbackEntry,
+    feedbackHistory: [feedbackEntry, ...existingHistory]
+  };
+}
+
+export function updateChecklistItem(inspection, { itemId, checked }) {
+  if (!inspection.agentGuidance?.checklist?.length) {
+    throw badRequest("Agent checklist is not available for this inspection.");
+  }
+
+  let matched = false;
+  const checklist = inspection.agentGuidance.checklist.map((item) => {
+    if (item.id !== itemId) {
+      return item;
+    }
+
+    matched = true;
+    return { ...item, checked: Boolean(checked) };
+  });
+
+  if (!matched) {
+    throw badRequest("checklist item was not found.");
+  }
+
+  const nextInspection = {
+    ...inspection,
+    agentGuidance: {
+      ...inspection.agentGuidance,
+      checklist
     }
   };
+  const progress = checklistProgress(nextInspection);
+
+  if (inspection.status !== "closed" && progress.total > 0 && progress.completed === progress.total) {
+    nextInspection.status = "reviewed";
+  } else if (inspection.status === "reviewed" && inspection.result === "defective" && progress.completed < progress.total) {
+    nextInspection.status = "action_required";
+  }
+
+  return nextInspection;
+}
+
+export function checklistProgress(inspection) {
+  const checklist = inspection.agentGuidance?.checklist ?? [];
+  return {
+    completed: checklist.filter((item) => item.checked).length,
+    total: checklist.length
+  };
+}
+
+export function removeFeedback(inspection, feedbackId) {
+  const existingHistory = inspection.feedbackHistory ?? (inspection.feedback ? [inspection.feedback] : []);
+  const nextHistory = existingHistory.filter((item) => feedbackKey(item) !== feedbackId);
+
+  if (nextHistory.length === existingHistory.length) {
+    return { inspection, deleted: false };
+  }
+
+  const feedback = nextHistory[0];
+  const nextInspection = {
+    ...inspection,
+    feedback,
+    feedbackHistory: nextHistory,
+    status: statusAfterFeedbackDelete(inspection, feedback)
+  };
+
+  if (!feedback) {
+    delete nextInspection.feedback;
+  }
+
+  if (feedback?.correctedResult) {
+    nextInspection.result = feedback.correctedResult;
+    nextInspection.defectType = feedback.correctedResult === "defective"
+      ? feedback.correctedDefectType ?? inspection.defectType ?? "scratch"
+      : null;
+  }
+
+  return { inspection: nextInspection, deleted: true };
+}
+
+function feedbackKey(feedback) {
+  return feedback.id ?? feedback.createdAt;
+}
+
+function statusAfterFeedbackDelete(inspection, feedback) {
+  if (!feedback) {
+    return initialStatusForResult(inspection.result);
+  }
+  if (feedback.reinspectionResult === "normal") {
+    return "closed";
+  }
+  if ((feedback.correctedResult ?? inspection.result) === "defective") {
+    return "action_required";
+  }
+  return "reviewed";
+}
+
+function effectiveStatus(inspection) {
+  return inspection.result === "normal" ? "closed" : inspection.status;
+}
+
+function initialStatusForResult(result) {
+  if (result === "defective") {
+    return "action_required";
+  }
+  if (result === "suspicious") {
+    return "pending";
+  }
+  return "closed";
+}
+
+async function persistVisionArtifacts({ inspection, store }) {
+  const localization = inspection.visionAnalysis?.localization;
+  if (!localization || !store?.saveUpload) {
+    return;
+  }
+
+  const nextLocalization = { ...localization };
+  nextLocalization.boxes = [];
+
+  const artifacts = [
+    { base64Key: "heatmapBase64", urlKey: "heatmapUrl", suffix: "patchcore-heatmap" },
+    { base64Key: "heatmapFullBase64", urlKey: "heatmapFullUrl", suffix: "patchcore-heatmap-full" },
+    { base64Key: "heatmapFocusBase64", urlKey: "heatmapFocusUrl", suffix: "patchcore-heatmap-focus" }
+  ];
+
+  for (const artifact of artifacts) {
+    const value = nextLocalization[artifact.base64Key];
+    if (!value) {
+      continue;
+    }
+    try {
+      const buffer = decodeBase64Image(value);
+      if (buffer.length > 0) {
+        nextLocalization[artifact.urlKey] = await store.saveUpload({
+          fileName: `${inspection.id}-${artifact.suffix}.png`,
+          buffer,
+          contentType: "image/png"
+        });
+      }
+    } catch (error) {
+      nextLocalization.heatmapStorageError = error instanceof Error ? error.message : "Heatmap storage failed.";
+    }
+    delete nextLocalization[artifact.base64Key];
+  }
+
+  inspection.visionAnalysis = {
+    ...inspection.visionAnalysis,
+    localization: nextLocalization
+  };
+}
+
+function decodeBase64Image(value) {
+  const normalized = String(value).replace(/^data:image\/png;base64,/i, "");
+  return Buffer.from(normalized, "base64");
 }
 
 function clampNumber(value, min, max) {
