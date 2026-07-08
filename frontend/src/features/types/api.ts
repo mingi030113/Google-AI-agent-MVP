@@ -5,7 +5,8 @@ export type RiskLevel = "low" | "medium" | "high";
 
 export interface MasterData {
   processes: Array<{ id: string; name: string }>;
-  equipment: Array<{ id: string; processId: string; name: string }>;
+  equipment: Array<{ id: string; processId: string; name: string; assetKey?: string }>;
+  assetClasses?: Array<{ id: string; name: string }>;
 }
 
 export interface InspectionListItem {
@@ -13,6 +14,8 @@ export interface InspectionListItem {
   imageUrl: string;
   processName: string;
   equipmentName: string;
+  assetKey?: string;
+  assetName?: string;
   lotNo: string;
   result: InspectionResult;
   defectType: string | null;

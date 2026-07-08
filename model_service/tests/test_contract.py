@@ -174,6 +174,58 @@ class FastApiContractTests(unittest.TestCase):
         self.assertEqual(payload["threshold"]["image"], 0.57)
         self.assertEqual(payload["localization"]["boxes"][0]["coordinateSpace"], "original")
 
+    def test_predict_passes_asset_key_to_multi_asset_runner(self) -> None:
+        class FakeMultiRunner:
+            ready = True
+            artifact_dirs = {"bottle": "./artifacts/bottle", "metal_nut": "./artifacts/metal_nut"}
+
+            def __init__(self) -> None:
+                self.asset_key = None
+
+            def load(self) -> None:
+                return None
+
+            def ready_payload(self):
+                return {
+                    "ok": True,
+                    "modelLoaded": False,
+                    "thresholdLoaded": True,
+                    "metadataLoaded": True,
+                    "assetKeys": ["bottle", "metal_nut"],
+                }
+
+            def predict_bytes(self, image_bytes: bytes, *, filename: str, asset_key: str | None = None):
+                self.asset_key = asset_key
+                return {
+                    "result": "normal",
+                    "anomalyScore": 0.2,
+                    "threshold": {"image": 0.57, "pixel": 0.61, "method": "val_good_p99"},
+                    "decisionMargin": -0.37,
+                    "confidence": 0.91,
+                    "model": {
+                        "name": "patchcore",
+                        "version": "patchcore-metal_nut-v1",
+                        "assetKey": "metal_nut",
+                        "backbone": "wide_resnet50_2",
+                        "layers": ["layer2", "layer3"],
+                        "coresetSamplingRatio": 0.1,
+                    },
+                    "localization": None,
+                }
+
+        runner = FakeMultiRunner()
+        client = TestClient(create_app(runner))
+        response = client.post(
+            "/predict",
+            data={"assetKey": "metal_nut"},
+            files={"image": ("part.png", b"png", "image/png")},
+        )
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(runner.asset_key, "metal_nut")
+        self.assertEqual(payload["model"]["assetKey"], "metal_nut")
+
 
 if __name__ == "__main__":
     unittest.main()

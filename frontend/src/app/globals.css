@@ -1694,9 +1694,9 @@ strong {
 }
 
 .inspection-title-status {
-  min-width: 420px;
+  min-width: 560px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid rgba(207, 217, 228, 0.78);
   border-radius: 8px;
@@ -2304,7 +2304,7 @@ strong {
 
 .inspection-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   gap: 14px;
   margin-top: 16px;
 }
@@ -3105,6 +3105,11 @@ strong {
 .dashboard-chip.green {
   color: #25765c;
   background: #dcf1e8;
+}
+
+.dashboard-chip.amber {
+  color: #8f5a08;
+  background: #fff1ce;
 }
 
 .dashboard-chart-stats {

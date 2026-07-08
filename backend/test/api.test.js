@@ -34,6 +34,11 @@ describe("quality agent backend API", () => {
   });
 
   it("returns seeded inspection history and dashboard metrics", async () => {
+    const masterData = await jsonFetch(`${baseUrl}/api/master-data`);
+    assert.deepEqual(masterData.assetClasses.map((item) => item.id), ["bottle", "metal_nut"]);
+    assert.equal(masterData.equipment.find((item) => item.id === "eq-a-1").assetKey, "bottle");
+    assert.equal(masterData.equipment.find((item) => item.id === "eq-b-1").assetKey, "metal_nut");
+
     const inspections = await jsonFetch(`${baseUrl}/api/inspections?page=1&pageSize=5`);
     assert.equal(inspections.items.length, 5);
     assert.equal(inspections.total, 128);
@@ -56,8 +61,8 @@ describe("quality agent backend API", () => {
 
   it("analyzes an uploaded image and accepts feedback", async () => {
     const form = new FormData();
-    form.append("processId", "process-a");
-    form.append("equipmentId", "eq-a-1");
+    form.append("processId", "process-b");
+    form.append("equipmentId", "eq-b-1");
     form.append("lotNo", "LOT-TEST-scratch");
     form.append("memo", "스크래치 의심");
     form.append("image", new Blob(["fake image bytes"], { type: "image/jpeg" }), "scratch.jpg");
@@ -69,6 +74,8 @@ describe("quality agent backend API", () => {
 
     assert.equal(analyzed.inspection.result, "defective");
     assert.equal(analyzed.inspection.defectType, "scratch");
+    assert.equal(analyzed.inspection.assetKey, "metal_nut");
+    assert.equal(analyzed.inspection.assetName, "Metal Nut");
 
     const checklistItemIds = analyzed.inspection.agentGuidance.checklist.map((item) => item.id);
     const firstChecklistUpdate = await jsonFetch(`${baseUrl}/api/inspections/${analyzed.inspection.id}/checklist`, {

@@ -165,6 +165,7 @@ export default function ManualsPage() {
                   <option value="contamination">contamination</option>
                   <option value="dent">dent</option>
                   <option value="crack">crack</option>
+                  <option value="flip">flip</option>
                 </select>
               </div>
             </div>

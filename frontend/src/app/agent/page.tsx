@@ -41,7 +41,8 @@ const defectLabels: Record<string, string> = {
   scratch: "스크래치",
   contamination: "오염",
   dent: "찍힘",
-  crack: "크랙"
+  crack: "크랙",
+  flip: "방향 오류"
 };
 
 type AgentChatEntry = {

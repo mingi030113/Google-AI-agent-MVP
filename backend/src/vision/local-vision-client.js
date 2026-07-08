@@ -41,6 +41,10 @@ function classifyImage({ hash, signal }) {
     return { result: "defective", defectType: "scratch", confidence: 0.88, reason: "스크래치 불량 힌트를 기준으로 판정했습니다." };
   }
 
+  if (containsAny(signal, ["방향 오류", "정렬 오류", "뒤집힘", "뒤집힌", "반전"])) {
+    return { result: "defective", defectType: "flip", confidence: 0.88, reason: "방향/정렬 오류 힌트를 기준으로 판정했습니다." };
+  }
+
   const score = Number.parseInt(hash.slice(0, 8), 16) / 0xffffffff;
   if (score > 0.68) {
     return {
@@ -76,10 +80,11 @@ function buildDefectScores({ result, defectType, confidence }) {
   }
 
   scores[defectType] = confidence;
+  const secondaryWeights = [0.32, 0.22, 0.14, 0.1, 0.08];
   let offset = 0;
   for (const type of defectTypes) {
     if (type !== defectType) {
-      scores[type] = round2(Math.max(0.05, confidence * [0.32, 0.22, 0.14][offset]));
+      scores[type] = round2(Math.max(0.05, confidence * (secondaryWeights[offset] ?? 0.08)));
       offset += 1;
     }
   }

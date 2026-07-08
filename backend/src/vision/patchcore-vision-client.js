@@ -1,6 +1,6 @@
 const DEFAULT_PATCHCORE_ENDPOINT = "http://127.0.0.1:8000";
 const ALLOWED_RESULTS = new Set(["normal", "suspicious", "defective"]);
-const ALLOWED_DEFECT_TYPES = new Set(["scratch", "contamination", "dent", "crack"]);
+const ALLOWED_DEFECT_TYPES = new Set(["scratch", "contamination", "dent", "crack", "flip"]);
 
 export class PatchCoreVisionModelClient {
   constructor({
@@ -16,13 +16,14 @@ export class PatchCoreVisionModelClient {
   }
 
   async analyze(input) {
-    const patchcore = await this.predict(input.image);
+    const assetKey = normalizeAssetKey(input.assetKey ?? input.fields?.assetKey ?? input.fields?.asset_key);
+    const patchcore = await this.predict(input.image, { assetKey });
     let defectTypeCandidate = null;
     let labelerModel = null;
 
     if (patchcore.result !== "normal" && this.labeler) {
       try {
-        const label = await this.labeler.labelDefectType({ ...input, patchcore });
+        const label = await this.labeler.labelDefectType({ ...input, patchcore, assetKey });
         defectTypeCandidate = ALLOWED_DEFECT_TYPES.has(label.defectTypeCandidate)
           ? label.defectTypeCandidate
           : null;
@@ -62,6 +63,7 @@ export class PatchCoreVisionModelClient {
         decisionMargin: patchcore.decisionMargin,
         localization: patchcore.localization,
         patchcoreModel,
+        assetKey,
         labelerModel,
         defectTypeCandidate,
         defectScores: labelerModel?.defectScores,
@@ -70,8 +72,9 @@ export class PatchCoreVisionModelClient {
     };
   }
 
-  async predict(image) {
+  async predict(image, { assetKey = "bottle" } = {}) {
     const form = new FormData();
+    form.append("assetKey", normalizeAssetKey(assetKey));
     form.append(
       "image",
       new Blob([image.buffer], { type: image.contentType || "application/octet-stream" }),
@@ -125,6 +128,14 @@ function normalizeModel(model) {
     layers: Array.isArray(model?.layers) ? model.layers.map(String) : ["layer2", "layer3"],
     coresetSamplingRatio: numberOr(model?.coresetSamplingRatio, 0.1)
   };
+}
+
+function normalizeAssetKey(value) {
+  return String(value ?? "bottle")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "") || "bottle";
 }
 
 function normalizeLocalization(localization) {

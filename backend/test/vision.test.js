@@ -9,6 +9,7 @@ import { analyzeInspection } from "../src/inspection-service.js";
 import { FallbackVisionModelClient } from "../src/vision/index.js";
 import { LocalVisionModelClient } from "../src/vision/local-vision-client.js";
 import { PatchCoreVisionModelClient } from "../src/vision/patchcore-vision-client.js";
+import { GeminiVisionModelClient } from "../src/vision/gemini-vision-client.js";
 
 describe("vision model clients", () => {
   it("keeps the local heuristic behavior for offline analysis", async () => {
@@ -21,6 +22,8 @@ describe("vision model clients", () => {
     assert.equal(result.result, "defective");
     assert.equal(result.defectType, "scratch");
     assert.equal(result.modelName, "local-vision-heuristic-v1");
+    assert.equal(Number.isFinite(result.raw.defectScores.flip), true);
+    assert.equal(Object.values(result.raw.defectScores).every(Number.isFinite), true);
   });
 
   it("falls back to local analysis when the primary vision model fails", async () => {
@@ -121,7 +124,7 @@ describe("vision model clients", () => {
             modelName: "gemini:test",
             defectTypeCandidate: "scratch",
             confidence: 0.64,
-            defectScores: { scratch: 0.64, contamination: 0.1, dent: 0.08, crack: 0.05 }
+            defectScores: { scratch: 0.64, contamination: 0.1, dent: 0.08, crack: 0.05, flip: 0.04 }
           };
         }
       }
@@ -139,6 +142,56 @@ describe("vision model clients", () => {
     assert.equal(result.defectType, "scratch");
     assert.equal(result.raw.defectTypeCandidate, "scratch");
     assert.equal(result.raw.patchcoreModel.version, "patchcore-bottle-v1");
+  });
+
+  it("accepts flip as a PatchCore defect type candidate", async () => {
+    const client = new PatchCoreVisionModelClient({
+      fetchImpl: async () => jsonResponse(patchcorePayload({ result: "defective", anomalyScore: 0.91, assetKey: "metal_nut" })),
+      labeler: {
+        modelName: "gemini:test",
+        labelDefectType: async () => ({
+          modelName: "gemini:test",
+          defectTypeCandidate: "flip",
+          confidence: 0.82,
+          reason: "metal_nut 기준면이 정상 샘플과 반대로 보입니다.",
+          defectScores: { flip: 0.82, dent: 0.22, scratch: 0.12, contamination: 0.08, crack: 0.04 }
+        })
+      }
+    });
+
+    const result = await client.analyze({
+      fields: { assetKey: "metal_nut", lotNo: "LOT-FLIP", memo: "" },
+      process: { name: "B공정" },
+      selectedEquipment: { name: "B공정 1호기" },
+      image: { filename: "metal-nut-flip.png", contentType: "image/png", buffer: Buffer.from("image") }
+    });
+
+    assert.equal(result.result, "defective");
+    assert.equal(result.defectType, "flip");
+    assert.equal(result.raw.defectTypeCandidate, "flip");
+    assert.equal(result.raw.defectScores.flip, 0.82);
+    assert.equal(result.raw.patchcoreModel.assetKey, "metal_nut");
+  });
+
+  it("sends the selected assetKey to the PatchCore model service", async () => {
+    let selectedAssetKey = null;
+    const client = new PatchCoreVisionModelClient({
+      fetchImpl: async (_url, init) => {
+        selectedAssetKey = init.body.get("assetKey");
+        return jsonResponse(patchcorePayload({ result: "normal", anomalyScore: 0.2, assetKey: "metal_nut" }));
+      }
+    });
+
+    const result = await client.analyze({
+      fields: { assetKey: "metal-nut", lotNo: "LOT-METAL", memo: "" },
+      process: { name: "A공정" },
+      selectedEquipment: { name: "A공정 1호기" },
+      image: { filename: "normal-metal-nut-good.png", contentType: "image/png", buffer: Buffer.from("image") }
+    });
+
+    assert.equal(selectedAssetKey, "metal_nut");
+    assert.equal(result.raw.patchcoreModel.assetKey, "metal_nut");
+    assert.equal(result.modelName, "patchcore:patchcore-metal_nut-v1");
   });
 
   it("keeps PatchCore decision when Gemini defect labeler fails", async () => {
@@ -192,6 +245,7 @@ describe("vision model clients", () => {
     const saved = [];
     const inspection = await analyzeInspection({
       fields: {
+        assetKey: "bottle",
         processId: "process-a",
         equipmentId: "eq-a-1",
         lotNo: "LOT-TEST-patchcore",
@@ -229,6 +283,8 @@ describe("vision model clients", () => {
     });
 
     assert.equal(inspection.result, "defective");
+    assert.equal(inspection.assetKey, "bottle");
+    assert.equal(inspection.assetName, "Bottle");
     assert.equal(inspection.visionAnalysis.localization.heatmapBase64, undefined);
     assert.equal(inspection.visionAnalysis.localization.heatmapFullBase64, undefined);
     assert.equal(inspection.visionAnalysis.localization.heatmapFocusBase64, undefined);
@@ -238,6 +294,61 @@ describe("vision model clients", () => {
     assert.deepEqual(inspection.visionAnalysis.localization.boxes, []);
     assert.equal(saved.length, 3);
     assert.ok(saved.every((item) => item.contentType === "image/png"));
+  });
+
+  it("injects labeled reference images into the Gemini labeler prompt for metal_nut", async () => {
+    const { client, capturedBody, restore } = withStubbedGeminiLabeler({ defectTypeCandidate: "flip", confidence: 0.72 });
+    try {
+      const label = await client.labelDefectType({
+        image: { buffer: Buffer.from("inspection"), contentType: "image/png", filename: "flip.png" },
+        fields: { lotNo: "LOT-FLIP", memo: "" },
+        process: { name: "B공정" },
+        selectedEquipment: { name: "B공정 1호기" },
+        patchcore: { result: "defective", anomalyScore: 0.9, threshold: { image: 0.5 }, localization: { boxes: [] } },
+        assetKey: "metal_nut"
+      });
+
+      const parts = capturedBody().contents[0].parts;
+      const imageParts = parts.filter((part) => part.inlineData);
+      const promptText = parts.map((part) => part.text ?? "").join("\n");
+
+      // 3 reference images (2 normal + 1 flip) plus the inspection image.
+      assert.equal(imageParts.length, 4);
+      assert.match(promptText, /FLIP DEFECT/);
+      assert.match(promptText, /Product class: metal_nut/);
+      assert.match(promptText, /In-plane rotation of the same face is NORMAL/);
+      assert.match(promptText, /Metal_nut-specific labeling rules/);
+      assert.match(promptText, /Do not choose contamination just because the flipped side has different brightness/);
+      assert.match(promptText, /When contamination and flip both seem plausible, prefer flip/);
+      assert.equal(label.defectTypeCandidate, "flip");
+    } finally {
+      restore();
+    }
+  });
+
+  it("omits reference images for classes without a manifest", async () => {
+    const { client, capturedBody, restore } = withStubbedGeminiLabeler({ defectTypeCandidate: "scratch", confidence: 0.6 });
+    try {
+      await client.labelDefectType({
+        image: { buffer: Buffer.from("inspection"), contentType: "image/png", filename: "part.png" },
+        fields: { lotNo: "LOT-BOTTLE", memo: "" },
+        process: { name: "A공정" },
+        selectedEquipment: { name: "A공정 1호기" },
+        patchcore: { result: "defective", anomalyScore: 0.9, threshold: { image: 0.5 }, localization: { boxes: [] } },
+        assetKey: "bottle"
+      });
+
+      const parts = capturedBody().contents[0].parts;
+      const imageParts = parts.filter((part) => part.inlineData);
+      const promptText = parts.map((part) => part.text ?? "").join("\n");
+
+      // No references, so only the single inspection image is sent.
+      assert.equal(imageParts.length, 1);
+      assert.doesNotMatch(promptText, /FLIP DEFECT/);
+      assert.doesNotMatch(promptText, /Metal_nut-specific labeling rules/);
+    } finally {
+      restore();
+    }
   });
 });
 
@@ -309,7 +420,8 @@ describe("patchcore backend API integration", () => {
   });
 });
 
-function patchcorePayload({ result, anomalyScore }) {
+function patchcorePayload({ result, anomalyScore, assetKey = "bottle" }) {
+  const normalizedAssetKey = String(assetKey).replace("-", "_");
   return {
     result,
     anomalyScore,
@@ -318,8 +430,8 @@ function patchcorePayload({ result, anomalyScore }) {
     confidence: 0.78,
     model: {
       name: "patchcore",
-      version: "patchcore-bottle-v1",
-      assetKey: "bottle",
+      version: `patchcore-${normalizedAssetKey}-v1`,
+      assetKey: normalizedAssetKey,
       backbone: "wide_resnet50_2",
       layers: ["layer2", "layer3"],
       coresetSamplingRatio: 0.1
@@ -336,6 +448,28 @@ function patchcorePayload({ result, anomalyScore }) {
       boxes: [{ x: 120, y: 88, width: 54, height: 31, score: 0.91, coordinateSpace: "original" }],
       imageSize: { width: 1024, height: 768 },
       modelInputSize: { width: 224, height: 224 }
+    }
+  };
+}
+
+function withStubbedGeminiLabeler(labelResult) {
+  const originalFetch = global.fetch;
+  let body = null;
+  global.fetch = async (_url, init) => {
+    body = JSON.parse(init.body);
+    return {
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: JSON.stringify(labelResult) }] } }]
+      })
+    };
+  };
+
+  return {
+    client: new GeminiVisionModelClient({ apiKey: "test-key" }),
+    capturedBody: () => body,
+    restore: () => {
+      global.fetch = originalFetch;
     }
   };
 }

@@ -40,6 +40,17 @@ $manuals = @(
     )
   },
   @{
+    Title = "방향 오류/Flip 불량 조치 기준서"
+    DefectType = "flip"
+    File = "flip-standard.md"
+    Checklist = @(
+      @{ id = "flip-1"; label = "정상 샘플과 비교해 부품 앞뒤/상하 방향, 체결면 노출 방향, 기준 홈 위치를 확인"; priority = "high" },
+      @{ id = "flip-2"; label = "bowl feeder, orientation rail, escapement, pick-and-place 흡착 방향 설정 점검"; priority = "high" },
+      @{ id = "flip-3"; label = "동일 LOT 샘플 5개 이상 재검사해 flip 재발 여부와 방향 보정값을 기록"; priority = "medium" },
+      @{ id = "flip-4"; label = "vision recipe 기준 샘플, ROI, rotation tolerance 변경 여부 확인"; priority = "medium" }
+    )
+  },
+  @{
     Title = "균열 불량 조치 기준서"
     DefectType = "crack"
     File = "crack-standard.md"

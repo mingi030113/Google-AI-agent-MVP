@@ -1,6 +1,6 @@
 # MVTec AD RAG 기준서 업로드 자료
 
-AI 품질검사 데모에서 조치 Agent가 MVTec AD 이미지 판정 결과를 기준으로 답변할 수 있도록 만든 기준서입니다. 단순 이상 탐지 결과를 넘어서, `scratch`, `contamination`, `dent`, `crack` 유형별 시각 단서, 원인 후보, 즉시 조치, 재검사 기준을 RAG 근거로 제공합니다.
+AI 품질검사 데모에서 조치 Agent가 MVTec AD 이미지 판정 결과를 기준으로 답변할 수 있도록 만든 기준서입니다. 단순 이상 탐지 결과를 넘어서, `scratch`, `contamination`, `dent`, `flip`, `crack` 유형별 시각 단서, 원인 후보, 즉시 조치, 재검사 기준을 RAG 근거로 제공합니다.
 
 ## 파일 목록
 
@@ -9,6 +9,7 @@ AI 품질검사 데모에서 조치 Agent가 MVTec AD 이미지 판정 결과를
 | scratch | 스크래치 불량 조치 기준서 | capsule, metal_nut, screw, pill, wood, leather | `scratch-standard.md` |
 | contamination | 이물/오염 불량 조치 기준서 | bottle, tile, pill, leather, carpet, grid, wood | `contamination-standard.md` |
 | dent | 찍힘/변형 불량 조치 기준서 | capsule, metal_nut, transistor, cable, zipper, bottle | `dent-standard.md` |
+| flip | 방향 오류/Flip 불량 조치 기준서 | metal_nut, cable, transistor, zipper | `flip-standard.md` |
 | crack | 균열 불량 조치 기준서 | tile, capsule, bottle, hazelnut, pill | `crack-standard.md` |
 
 ## 기준서 설계 원칙
@@ -64,6 +65,19 @@ AI 품질검사 데모에서 조치 Agent가 MVTec AD 이미지 판정 결과를
 - 기능면 dent 의심품은 품질관리자 승인 전 격리
 ```
 
+### flip
+
+- 기준서명: 방향 오류/Flip 불량 조치 기준서
+- 불량 유형: flip
+- 체크리스트:
+
+```text
+- 정상 샘플과 비교해 부품 앞뒤/상하 방향, 체결면 노출 방향, 기준 홈 위치를 확인
+- bowl feeder, orientation rail, escapement, pick-and-place 흡착 방향 설정 점검
+- 동일 LOT 샘플 5개 이상 재검사해 flip 재발 여부와 방향 보정값을 기록
+- vision recipe 기준 샘플, ROI, rotation tolerance 변경 여부 확인
+```
+
 ### crack
 
 - 기준서명: 균열 불량 조치 기준서
@@ -80,7 +94,7 @@ AI 품질검사 데모에서 조치 Agent가 MVTec AD 이미지 판정 결과를
 
 ## 일괄 업로드
 
-백엔드가 `http://localhost:4000`에서 실행 중이면 아래 명령으로 4개 기준서를 한 번에 등록할 수 있습니다.
+백엔드가 `http://localhost:4000`에서 실행 중이면 아래 명령으로 5개 기준서를 한 번에 등록할 수 있습니다.
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File docs\manuals\upload-rag-manuals.ps1
@@ -98,6 +112,7 @@ Agent 화면에서 아래 질문으로 RAG 검색 품질을 확인합니다.
 
 ```text
 metal_nut scratch면 fixture랑 deburring 중 어디를 먼저 봐야 해?
+metal_nut flip이면 bowl feeder랑 vision recipe 중 어디를 먼저 봐야 해?
 tile oil contamination이면 어떤 설비를 확인해야 해?
 transistor bent_lead가 dent로 잡히면 조치 순서가 뭐야?
 bottle broken_small이면 생산을 바로 멈춰야 해?

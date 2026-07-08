@@ -36,7 +36,8 @@ const defectLabels: Record<string, string> = {
   scratch: "스크래치",
   contamination: "오염",
   dent: "찍힘",
-  crack: "크랙"
+  crack: "크랙",
+  flip: "방향 오류"
 };
 
 const resultLabels: Record<string, string> = {
@@ -45,13 +46,26 @@ const resultLabels: Record<string, string> = {
   defective: "불량 감지"
 };
 
-const defectOrder = ["crack", "scratch", "contamination", "dent"];
+const defectOrder = ["crack", "scratch", "contamination", "dent", "flip"];
 
 const reasonLabels: Record<string, string> = {
   crack: "충격 흔적",
   scratch: "레일 접촉",
   contamination: "표면 오염",
-  dent: "압입 흔적"
+  dent: "압입 흔적",
+  flip: "방향/정렬 오류"
+};
+
+const fallbackAssetClasses: Record<string, string> = {
+  bottle: "Bottle",
+  metal_nut: "Metal Nut"
+};
+
+const equipmentAssetKeys: Record<string, string> = {
+  "eq-a-1": "bottle",
+  "eq-a-2": "bottle",
+  "eq-b-1": "metal_nut",
+  "eq-c-1": "metal_nut"
 };
 
 const agentHandoffKey = "quality-agent-inspection-handoff";
@@ -61,7 +75,7 @@ export default function NewInspectionPage() {
   const [master, setMaster] = useState<MasterData | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
-  const [form, setForm] = useState({ processId: "", equipmentId: "", lotNo: "LOT-20260518-001", memo: "" });
+  const [form, setForm] = useState({ assetKey: "bottle", processId: "", equipmentId: "", lotNo: "LOT-20260518-001", memo: "" });
   const [inspection, setInspection] = useState<InspectionDetail | null>(null);
   const [stage, setStage] = useState<StageKey>("ready");
   const [loading, setLoading] = useState(false);
@@ -70,10 +84,12 @@ export default function NewInspectionPage() {
   useEffect(() => {
     client.masterData().then((data) => {
       setMaster(data);
+      const firstEquipment = data.equipment[0];
       setForm((current) => ({
         ...current,
+        assetKey: assetKeyForEquipment(firstEquipment, current.assetKey),
         processId: data.processes[0]?.id ?? "",
-        equipmentId: data.equipment[0]?.id ?? ""
+        equipmentId: firstEquipment?.id ?? ""
       }));
     }).catch((err) => setError(err.message));
   }, []);
@@ -92,6 +108,8 @@ export default function NewInspectionPage() {
   const defectScores = buildDefectScores(inspection);
   const selectedProcess = master?.processes.find((item) => item.id === form.processId);
   const selectedEquipment = master?.equipment.find((item) => item.id === form.equipmentId);
+  const selectedAssetClass = master?.assetClasses?.find((item) => item.id === form.assetKey);
+  const selectedAssetName = selectedAssetClass?.name ?? fallbackAssetClasses[form.assetKey] ?? form.assetKey;
   const requestReady = Boolean(image && form.processId && form.equipmentId && form.lotNo);
   const hasAnomaly = inspection ? inspection.result !== "normal" : false;
   const DecisionIcon = hasAnomaly ? AlertTriangle : ShieldCheck;
@@ -110,6 +128,7 @@ export default function NewInspectionPage() {
 
     const body = new FormData();
     body.append("image", image);
+    body.append("assetKey", form.assetKey);
     body.append("processId", form.processId);
     body.append("equipmentId", form.equipmentId);
     body.append("lotNo", form.lotNo);
@@ -147,6 +166,7 @@ export default function NewInspectionPage() {
         <div className="inspection-title-status">
           <span><strong>{selectedProcess?.name ?? "-"}</strong><small>공정</small></span>
           <span><strong>{selectedEquipment?.name ?? "-"}</strong><small>설비</small></span>
+          <span><strong>{selectedAssetName}</strong><small>제품 클래스</small></span>
           <span className={requestReady ? "ready" : ""}><strong>{requestReady ? "Ready" : "Standby"}</strong><small>검사 상태</small></span>
         </div>
       </header>
@@ -204,15 +224,24 @@ export default function NewInspectionPage() {
               <label>공정</label>
               <select className="select" value={form.processId} onChange={(event) => {
                 const processId = event.target.value;
-                const firstEquipment = master?.equipment.find((item) => item.processId === processId)?.id ?? "";
-                setForm({ ...form, processId, equipmentId: firstEquipment });
+                const firstEquipment = master?.equipment.find((item) => item.processId === processId);
+                setForm({
+                  ...form,
+                  processId,
+                  equipmentId: firstEquipment?.id ?? "",
+                  assetKey: assetKeyForEquipment(firstEquipment, form.assetKey)
+                });
               }}>
                 {master?.processes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </div>
             <div className="field">
               <label>설비</label>
-              <select className="select" value={form.equipmentId} onChange={(event) => setForm({ ...form, equipmentId: event.target.value })}>
+              <select className="select" value={form.equipmentId} onChange={(event) => {
+                const equipmentId = event.target.value;
+                const nextEquipment = master?.equipment.find((item) => item.id === equipmentId);
+                setForm({ ...form, equipmentId, assetKey: assetKeyForEquipment(nextEquipment, form.assetKey) });
+              }}>
                 {equipment.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </div>
@@ -277,6 +306,7 @@ export default function NewInspectionPage() {
                 <span><FileText size={14} /> LOT {form.lotNo}</span>
                 <span><LocateFixed size={14} /> 공정 {master?.processes.find((item) => item.id === form.processId)?.name ?? "-"}</span>
                 <span><ShieldCheck size={14} /> 설비 {master?.equipment.find((item) => item.id === form.equipmentId)?.name ?? "-"}</span>
+                <span><Cpu size={14} /> 제품 {selectedAssetName}</span>
                 <span>{inspection.inspectedAt.slice(0, 19).replace("T", " ")}</span>
               </div>
             </div>
@@ -288,6 +318,7 @@ export default function NewInspectionPage() {
               </div>
               <div className="inspection-summary-grid">
                 <SummaryItem icon={FileImage} label="이미지" value={image ? "선택됨" : "대기"} active={Boolean(image)} />
+                <SummaryItem icon={Cpu} label="제품" value={selectedAssetName} active={Boolean(form.assetKey)} />
                 <SummaryItem icon={LocateFixed} label="공정" value={selectedProcess?.name ?? "-"} active={Boolean(form.processId)} />
                 <SummaryItem icon={ShieldCheck} label="설비" value={selectedEquipment?.name ?? "-"} active={Boolean(form.equipmentId)} />
                 <SummaryItem icon={Sparkles} label="Agent" value={requestReady ? "준비됨" : "대기"} active={requestReady} />
@@ -518,6 +549,10 @@ function buildDefectScores(inspection: InspectionDetail | null) {
 
 function formatScore(value: number | undefined) {
   return Number.isFinite(value) ? Number(value).toFixed(3) : "-";
+}
+
+function assetKeyForEquipment(equipment: MasterData["equipment"][number] | undefined, fallback: string) {
+  return equipment?.assetKey ?? equipmentAssetKeys[equipment?.id ?? ""] ?? fallback;
 }
 
 function priorityLabel(priority: "low" | "medium" | "high") {

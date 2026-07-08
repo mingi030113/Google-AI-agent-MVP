@@ -13,6 +13,7 @@ import {
   sendJson,
   sendNoContent
 } from "./http.js";
+import { assetClasses } from "./domain.js";
 import {
   analyzeInspectionUseCase,
   applyInspectionFeedbackUseCase,
@@ -73,7 +74,7 @@ async function routeRequest({ request, response, store, visionClient, env }) {
 
   if (request.method === "GET" && pathname === "/api/master-data") {
     const [processes, equipment] = await Promise.all([store.listProcesses(), store.listEquipment()]);
-    sendJson(response, 200, { processes, equipment });
+    sendJson(response, 200, { processes, equipment, assetClasses });
     return;
   }
 

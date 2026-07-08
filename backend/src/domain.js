@@ -5,10 +5,15 @@ export const processes = [
 ];
 
 export const equipment = [
-  { id: "eq-a-1", processId: "process-a", name: "A공정 1호기" },
-  { id: "eq-a-2", processId: "process-a", name: "A공정 2호기" },
-  { id: "eq-b-1", processId: "process-b", name: "B공정 1호기" },
-  { id: "eq-c-1", processId: "process-c", name: "C공정 1호기" }
+  { id: "eq-a-1", processId: "process-a", name: "A공정 1호기", assetKey: "bottle" },
+  { id: "eq-a-2", processId: "process-a", name: "A공정 2호기", assetKey: "bottle" },
+  { id: "eq-b-1", processId: "process-b", name: "B공정 1호기", assetKey: "metal_nut" },
+  { id: "eq-c-1", processId: "process-c", name: "C공정 1호기", assetKey: "metal_nut" }
+];
+
+export const assetClasses = [
+  { id: "bottle", name: "Bottle" },
+  { id: "metal_nut", name: "Metal Nut" }
 ];
 
 export const manuals = [
@@ -46,6 +51,17 @@ export const manuals = [
     ]
   },
   {
+    id: "manual-flip",
+    title: "방향 오류/Flip 불량 조치 기준서",
+    defectType: "flip",
+    excerpt: "metal_nut flip 또는 방향/정렬 오류 의심 시 bowl feeder, orientation rail, vision 정렬 기준, pick-and-place 방향 보정값을 확인한다.",
+    checklist: [
+      { id: "flip-1", label: "정상 샘플과 비교해 부품 앞뒤/상하 방향, 체결면 노출 방향, 기준 홈 위치를 확인", priority: "high" },
+      { id: "flip-2", label: "bowl feeder, orientation rail, escapement, pick-and-place 흡착 방향 설정 점검", priority: "high" },
+      { id: "flip-3", label: "동일 LOT 샘플 5개 이상 재검사해 flip 재발 여부와 방향 보정값을 기록", priority: "medium" }
+    ]
+  },
+  {
     id: "manual-crack",
     title: "균열 불량 조치 기준서",
     defectType: "crack",
@@ -66,6 +82,23 @@ export function getProcess(processId) {
 
 export function getEquipment(equipmentId) {
   return equipment.find((item) => item.id === equipmentId) ?? null;
+}
+
+export function getAssetKeyForEquipment(equipmentId) {
+  return normalizeAssetKey(getEquipment(equipmentId)?.assetKey);
+}
+
+export function getAssetClass(assetKey) {
+  const normalized = normalizeAssetKey(assetKey);
+  return assetClasses.find((item) => item.id === normalized) ?? null;
+}
+
+export function normalizeAssetKey(assetKey) {
+  return String(assetKey ?? "bottle")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "") || "bottle";
 }
 
 export function getManualByDefectType(defectType) {

@@ -22,6 +22,7 @@ frontend/.env.*
 
 # Runtime data and uploads
 backend/data/
+artifacts/
 
 # Logs
 *.log
@@ -32,6 +33,10 @@ backend/server.err.log
 
 # Generated artifacts
 docs/frontend.zip
+results/
+__pycache__/
+**/__pycache__/
+*.pyc
 reports/*.docx
 screenshots/
 frontend/tsconfig.tsbuildinfo

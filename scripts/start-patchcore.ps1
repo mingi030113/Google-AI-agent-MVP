@@ -1,9 +1,10 @@
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$artifactRoot = $env:PATCHCORE_ARTIFACT_ROOT
 $artifactDir = $env:PATCHCORE_ARTIFACT_DIR
-if (-not $artifactDir) {
-  $artifactDir = Join-Path $root "artifacts\bottle"
+if (-not $artifactRoot -and -not $artifactDir) {
+  $artifactRoot = Join-Path $root "artifacts"
 }
 
 $pythonCandidates = @(
@@ -29,9 +30,22 @@ if (-not $python) {
   throw "Python runtime was not found. Set PATCHCORE_PYTHON to a Python executable with model_service requirements installed."
 }
 
-$env:PATCHCORE_ARTIFACT_DIR = $artifactDir
+if ($artifactRoot) {
+  $env:PATCHCORE_ARTIFACT_ROOT = $artifactRoot
+  if (-not $env:PATCHCORE_DEFAULT_ASSET_KEY) {
+    $env:PATCHCORE_DEFAULT_ASSET_KEY = "bottle"
+  }
+} else {
+  $env:PATCHCORE_ARTIFACT_DIR = $artifactDir
+}
+
 Write-Host "Starting PatchCore model service"
-Write-Host "Artifact dir: $env:PATCHCORE_ARTIFACT_DIR"
+if ($env:PATCHCORE_ARTIFACT_ROOT) {
+  Write-Host "Artifact root: $env:PATCHCORE_ARTIFACT_ROOT"
+  Write-Host "Default asset: $env:PATCHCORE_DEFAULT_ASSET_KEY"
+} else {
+  Write-Host "Artifact dir: $env:PATCHCORE_ARTIFACT_DIR"
+}
 Write-Host "Python: $python"
 
 Set-Location $root

@@ -39,7 +39,8 @@ const defectLabels: Record<string, string> = {
   scratch: "scratch",
   contamination: "contamination",
   dent: "dent",
-  crack: "crack"
+  crack: "crack",
+  flip: "flip"
 };
 
 const riskLabels: Record<RiskLevel, string> = {
@@ -97,9 +98,7 @@ export default function DashboardPage() {
       <div className="dashboard-breadcrumb">
         <Home size={14} />
         <ChevronRight size={14} />
-        <span>대시보드</span>
-        <ChevronRight size={14} />
-        <strong>품질 대시보드</strong>
+        <strong>대시보드</strong>
       </div>
 
       <header className="dashboard-title-row">
@@ -156,7 +155,7 @@ export default function DashboardPage() {
               </div>
               <div className="dashboard-chart-stats">
                 <span><TrendingUp size={14} /> 불량 피크 {topTrendPoint?.defective ?? 0}건</span>
-                <span>일평균 불량 {averageDefective(metrics.trend)}건</span>
+                <span>점선 기준: 일평균 불량 {averageDefective(metrics.trend)}건</span>
                 <span>누적 검사 {metrics.summary.totalInspections}건</span>
               </div>
               <ResponsiveContainer width="100%" height={236}>
@@ -207,7 +206,7 @@ export default function DashboardPage() {
               <div className="dashboard-chart-legend" aria-label="차트 범례">
                 <span><i className="normal" /> 정상</span>
                 <span><i className="defective" /> 불량</span>
-                <span><i className="average" /> 불량 평균선</span>
+                <span><i className="average" /> 기간 일평균 불량선</span>
               </div>
             </div>
 
@@ -217,6 +216,7 @@ export default function DashboardPage() {
                   <h2>공정별 불량률</h2>
                   <p>공정별 불량률을 비교합니다.</p>
                 </div>
+                <span className="dashboard-chip amber">고위험 기준 15%</span>
               </div>
               <div className="dashboard-process-bars">
                 <ResponsiveContainer width="100%" height={246}>

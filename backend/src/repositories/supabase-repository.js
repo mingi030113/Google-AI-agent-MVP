@@ -1,4 +1,4 @@
-import { equipment, manuals, processes } from "../domain.js";
+import { equipment, getAssetClass, getAssetKeyForEquipment, manuals, processes } from "../domain.js";
 import { removeFeedback } from "../inspection-service.js";
 import { cosineSimilarity, tokenize } from "../rag/embedding.js";
 
@@ -35,7 +35,7 @@ export class SupabaseRepository {
 
   async listEquipment() {
     return this.request("/rest/v1/equipment?select=id,process_id,name&order=sort_order.asc").then((rows) =>
-      rows.map((row) => ({ id: row.id, processId: row.process_id, name: row.name }))
+      rows.map((row) => ({ id: row.id, processId: row.process_id, name: row.name, assetKey: getAssetKeyForEquipment(row.id) }))
     ).catch(() => equipment);
   }
 
@@ -421,6 +421,10 @@ function mapInspectionRow(row, publicStorageBase) {
     .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
     .map(mapFeedbackRow);
   const feedback = feedbackHistory[0];
+  const assetKey = row.analyzed_payload?.visionAnalysis?.assetKey
+    ?? row.analyzed_payload?.visionAnalysis?.patchcoreModel?.assetKey
+    ?? getAssetKeyForEquipment(row.equipment_id);
+  const assetClass = getAssetClass(assetKey);
 
   const inspection = {
     id: row.id,
@@ -429,6 +433,8 @@ function mapInspectionRow(row, publicStorageBase) {
     processName: row.processes?.name ?? row.process_name ?? row.process_id,
     equipmentId: row.equipment_id,
     equipmentName: row.equipment?.name ?? row.equipment_name ?? row.equipment_id,
+    assetKey,
+    assetName: assetClass?.name ?? assetKey,
     lotNo: row.lot_no,
     operatorName: row.operator_name,
     result: row.result,

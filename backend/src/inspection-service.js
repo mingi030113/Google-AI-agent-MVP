@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { badRequest } from "./http.js";
 import {
+  getAssetClass,
   getEquipment,
   getManualByDefectType,
-  getProcess
+  getProcess,
+  normalizeAssetKey
 } from "./domain.js";
 import { toKstIsoString } from "./time.js";
 
@@ -32,7 +34,19 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient,
   const lotNo = fields.lotNo?.trim();
   const memo = fields.memo?.trim() || undefined;
   const { process, selectedEquipment } = validateInspectionInput({ processId, equipmentId, lotNo });
-  const analysis = await visionClient.analyze({ fields, image, process, selectedEquipment });
+  const assetKey = normalizeAssetKey(selectedEquipment.assetKey ?? fields.assetKey ?? fields.asset_key);
+  const assetClass = getAssetClass(assetKey);
+  if (!assetClass) {
+    throw badRequest("assetKey is invalid for the selected equipment.");
+  }
+  const analysis = await visionClient.analyze({
+    fields: { ...fields, assetKey },
+    image,
+    process,
+    selectedEquipment,
+    assetKey,
+    assetClass
+  });
   const manual = analysis.defectType ? getManualByDefectType(analysis.defectType) : null;
 
   const inspection = {
@@ -42,6 +56,8 @@ export async function analyzeInspection({ fields, imageUrl, image, visionClient,
     processName: process.name,
     equipmentId,
     equipmentName: selectedEquipment.name,
+    assetKey,
+    assetName: assetClass.name,
     lotNo,
     operatorName: "현장 작업자",
     result: analysis.result,
@@ -71,6 +87,8 @@ export function toListItem(inspection) {
     imageUrl: normalized.imageUrl,
     processName: normalized.processName,
     equipmentName: normalized.equipmentName,
+    assetKey: normalized.assetKey,
+    assetName: normalized.assetName,
     lotNo: normalized.lotNo,
     result: normalized.result,
     defectType: normalized.defectType,

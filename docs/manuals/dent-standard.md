@@ -34,7 +34,7 @@ Agent는 아래 결함명 또는 표현을 dent/변형 기준서와 연결한다
 | `capsule/squeeze` | 캡슐 shell이 눌리거나 타원형으로 변형 | 과압, 적재 하중, feeder 압착 |
 | `capsule/poke` | 표면이 찢어진 균열보다 국부 압흔/구멍 중심 | 핀/돌출부 접촉, guide pin 간섭 |
 | `metal_nut/bent` | nut 외곽, 체결면, chamfer가 휘거나 눌림 | 프레스/fixture 압력, 낙하 충격 |
-| `metal_nut/flip` | 부품 방향이 뒤집혀 검사되거나 조립 방향 오류 | feeding orientation 오류, vision 정렬 문제 |
+| `metal_nut/bent` | nut 외곽, chamfer, 체결면이 눌리거나 휘어 정상 외곽선과 다름 | feeding 충격, fixture 압력 과다 |
 | `transistor/bent_lead` | 리드가 휘어짐 | insertion jig, pick-and-place, tray 간섭 |
 | `transistor/damaged_case` | 케이스 모서리 깨짐보다 눌림/찌그러짐이 중심 | 취급 충격, press force 과다 |
 | `transistor/misplaced` | 부품 위치가 정상 기준에서 벗어남 | 조립 jig 정렬, suction nozzle 위치 |

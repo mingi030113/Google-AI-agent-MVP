@@ -12,6 +12,137 @@ from .decision import decide_result
 from .localization import build_localization, to_numpy
 
 
+class MultiAssetPatchCorePredictor:
+    def __init__(
+        self,
+        artifact_dirs: dict[str, str | Path],
+        *,
+        default_asset_key: str = "bottle",
+        gray_zone_ratio: float = 0.08,
+        device: str | None = None,
+        preload_all: bool = False,
+    ) -> None:
+        self.artifact_dirs = {
+            normalize_asset_key(asset_key): Path(artifact_dir)
+            for asset_key, artifact_dir in artifact_dirs.items()
+        }
+        self.default_asset_key = normalize_asset_key(default_asset_key)
+        if self.default_asset_key not in self.artifact_dirs and self.artifact_dirs:
+            self.default_asset_key = next(iter(self.artifact_dirs))
+        self.gray_zone_ratio = gray_zone_ratio
+        self.device = device
+        self.preload_all = preload_all
+        self.predictors: dict[str, PatchCorePredictor] = {}
+        self.load_error: str | None = None
+
+    @classmethod
+    def discover(
+        cls,
+        artifact_root: str | Path,
+        *,
+        default_asset_key: str = "bottle",
+        gray_zone_ratio: float = 0.08,
+        device: str | None = None,
+        preload_all: bool = False,
+    ) -> "MultiAssetPatchCorePredictor":
+        root = Path(artifact_root)
+        artifact_dirs = {
+            item.name: item
+            for item in sorted(root.iterdir(), key=lambda path: path.name) if is_artifact_dir(item)
+        } if root.exists() else {}
+        return cls(
+            artifact_dirs,
+            default_asset_key=default_asset_key,
+            gray_zone_ratio=gray_zone_ratio,
+            device=device,
+            preload_all=preload_all,
+        )
+
+    @property
+    def ready(self) -> bool:
+        if not self.artifact_dirs:
+            return False
+        default = self.predictors.get(self.default_asset_key)
+        return default.ready if default else True
+
+    @property
+    def ready_asset_keys(self) -> list[str]:
+        return [asset_key for asset_key, predictor in self.predictors.items() if predictor.ready]
+
+    def load(self) -> None:
+        if not self.artifact_dirs:
+            self.load_error = "No PatchCore artifact directories were found."
+            return
+
+        if self.preload_all:
+            for asset_key in self.artifact_dirs:
+                try:
+                    self._load_predictor(asset_key)
+                except Exception as error:  # pragma: no cover - depends on external artifact files.
+                    self.load_error = str(error)
+            return
+
+        try:
+            self._load_predictor(self.default_asset_key)
+            self.load_error = None
+        except Exception as error:  # pragma: no cover - depends on external artifact files.
+            self.load_error = str(error)
+
+    def ready_payload(self) -> dict[str, Any]:
+        assets: dict[str, Any] = {}
+        for asset_key, artifact_dir in self.artifact_dirs.items():
+            predictor = self.predictors.get(asset_key)
+            if predictor:
+                assets[asset_key] = predictor.ready_payload()
+            else:
+                assets[asset_key] = {
+                    "ok": True,
+                    "modelLoaded": False,
+                    "thresholdLoaded": is_artifact_dir(artifact_dir),
+                    "metadataLoaded": is_artifact_dir(artifact_dir),
+                    "artifactDir": str(artifact_dir),
+                    "error": None,
+                }
+
+        default = self.predictors.get(self.default_asset_key)
+        return {
+            "ok": bool(self.artifact_dirs) and (default.ready if default else True),
+            "modelLoaded": bool(default.ready) if default else False,
+            "thresholdLoaded": bool(self.artifact_dirs),
+            "metadataLoaded": bool(self.artifact_dirs),
+            "defaultAssetKey": self.default_asset_key,
+            "assetKeys": list(self.artifact_dirs.keys()),
+            "readyAssetKeys": self.ready_asset_keys,
+            "assets": assets,
+            "error": self.load_error,
+        }
+
+    def predict_bytes(self, image_bytes: bytes, *, filename: str = "image.png", asset_key: str | None = None) -> dict[str, Any]:
+        selected_asset_key = normalize_asset_key(asset_key or self.default_asset_key)
+        predictor = self._load_predictor(selected_asset_key)
+        return predictor.predict_bytes(image_bytes, filename=filename)
+
+    def _load_predictor(self, asset_key: str) -> "PatchCorePredictor":
+        if asset_key not in self.artifact_dirs:
+            available = ", ".join(self.artifact_dirs.keys()) or "none"
+            raise KeyError(f"Unknown PatchCore assetKey '{asset_key}'. Available assetKeys: {available}")
+
+        predictor = self.predictors.get(asset_key)
+        if predictor is None:
+            predictor = PatchCorePredictor(
+                self.artifact_dirs[asset_key],
+                gray_zone_ratio=self.gray_zone_ratio,
+                device=self.device,
+            )
+            self.predictors[asset_key] = predictor
+
+        if not predictor.ready:
+            predictor.load()
+        if not predictor.ready:
+            raise RuntimeError(predictor.load_error or f"PatchCore model '{asset_key}' is not ready.")
+        return predictor
+
+
 class PatchCorePredictor:
     def __init__(self, artifact_dir: str | Path, *, gray_zone_ratio: float = 0.08, device: str | None = None) -> None:
         self.artifact_dir = Path(artifact_dir)
@@ -174,3 +305,17 @@ def extract_value(value: Any, names: list[str]) -> Any:
     if isinstance(value, (list, tuple)) and value:
         return extract_value(value[0], names)
     return None
+
+
+def normalize_asset_key(value: str | None) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return "".join(char for char in text if char.isalnum() or char == "_") or "bottle"
+
+
+def is_artifact_dir(path: Path) -> bool:
+    return (
+        path.is_dir()
+        and (path / "model.ckpt").exists()
+        and (path / "threshold.json").exists()
+        and (path / "metadata.json").exists()
+    )

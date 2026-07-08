@@ -1,0 +1,5 @@
+[
+  { "file": "normal-01.jpg", "label": "normal", "note": "정상 앞면. prong이 위로 솟고 넓은 카운터보어가 보임 (기준 방향 A)" },
+  { "file": "normal-02.jpg", "label": "normal", "note": "정상 앞면. 회전 각도만 다른 정상 샘플 (기준 방향 B)" },
+  { "file": "flip-01.jpg", "label": "flip", "note": "flip 불량. 뒤집혀 뒷면이 보이고 prong이 반대로 말리며 중앙에 나사 boss가 돌출" }
+]

@@ -46,7 +46,8 @@ const defectLabels: Record<string, string> = {
   scratch: "scratch",
   crack: "crack",
   dent: "dent",
-  contamination: "contamination"
+  contamination: "contamination",
+  flip: "flip"
 };
 
 export default function InspectionsPage() {
